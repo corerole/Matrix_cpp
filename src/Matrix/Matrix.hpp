@@ -1259,12 +1259,12 @@ struct Matrix {
 		}
 		
 	public:
-		constexpr RowProxy<value_type> operator[](size_type r) {
+		constexpr RowProxy<value_type> operator[](size_type r) noexcept {
 			// if (r >= _rows) throw std::out_of_range("Row index out of range");
 			return RowProxy<value_type>{ _data + r * _cols, _cols };
 		}
 
-		constexpr const RowProxy<const value_type> operator[](size_type r) const {
+		constexpr const RowProxy<const value_type> operator[](size_type r) const noexcept {
 			// if (r >= _rows) throw std::out_of_range("Row index out of range");
 			return RowProxy<const value_type>{ _data + r * _cols, _cols };
 		}

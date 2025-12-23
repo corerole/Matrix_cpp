@@ -17,7 +17,7 @@ int main() {
 	A[0][0] = 2.0f; A[0][1] = -0.5f; A[0][2] = 1.0f; A[0][3] = 0.0f;
 	A[1][0] = 1.0f; A[1][1] = -1.0f; A[1][2] = 0.0f; A[1][3] = 2.0f;
 	A[2][0] = 0.0f; A[2][1] = 1.0f; A[2][2] = 2.0f; A[2][3] = -1.0f;
-	A[3][0] = -2.0f; A[3][1] = 0.0f; A[3][2] = 1.0f; A[3][3] = -1.0f;
+	A[3][0] = -2.0f; A[3][1] = 3.0f; A[3][2] = 1.0f; A[3][3] = -1.0f;
 	std::cout << "Matrix A:" << std::endl;
 	A.print();
 
@@ -97,20 +97,19 @@ int main() {
 #endif
 #endif
 
-#if 0
+#if 1
 	constexpr size_t M = 500;
 	constexpr size_t N = 600;
 	constexpr size_t K = 700;
+	constexpr auto much = 2000U;
 
-	Matrix<long double> R(M, K);
-	for (auto&& x : R) {
-		x = dist(gen);
-	}
+	auto J = Matrix<long double>(much, much);
+	std::ranges::generate(J, gen);
 
-	Matrix<long double> V(K, N);
-	for (auto&& x : V) {
-		x = dist(gen);
-	}
+	auto P = Matrix<long double>(M, K);
+	std::ranges::generate(P, gen);
+	auto O = Matrix<long double>(K, N);
+	std::ranges::generate(O, gen);
 
 	std::cout << "Filled! " << std::endl;
 #endif
@@ -153,16 +152,40 @@ int main() {
 	});
 #endif
 
-
-
+#if 0
 	std::cout << "Infinity norm: " << helpers::infinity_norm(A) << std::endl;
 	std::cout << "Mean col: " << helpers::mean(A.col(3)) << std::endl;
 	std::cout << "Mean A: " << helpers::mean(A) << std::endl;
+#endif
+	// auto&& [X, Y, Z] = helpers::svd_jacobi(A);
 
+#if 0
+	// test concept utils::arithmetic_input_range
+	struct Z { int* a = nullptr; };
+	auto false_ = std::vector<Z>(10);
+	auto true_ = std::vector<int>(10);
+	auto f = helpers::max(false_);
+	auto t = helpers::max(true_);
+#endif
+
+#if 0
+	// test concept utils::Container
 	std::ranges::for_each(helpers::col_means(A), [](auto&& it) { std::cout << it << " "; });
 	std::cout << std::endl;
 	std::ranges::for_each(helpers::row_means(A), [](auto&& it) { std::cout << it << " "; });
 	std::cout << std::endl;
+#endif
+
+#if 0
+	std::cout << helpers::matrix_euclid_max_col_norm(A) << std::endl;
+#endif
+	using complex_t = typename std::complex<double>;
+	auto x = std::vector<complex_t>(10);
+	auto F = Matrix<complex_t>(10, 10);
+	auto z = helpers::matrix_euclid_max_col_norm(F);
+	
+	// auto&& [U, Sigma, Vh] = helpers::svd_jacobi(J);
+	// auto&& [Q, R] = helpers::householder_qr_decomposition(J);
 
 	return 0;
 }

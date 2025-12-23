@@ -9,10 +9,11 @@
 void helpers_tests();
 
 namespace utils {
-	template<typename T> concept arithmetic = std::is_arithmetic_v<T>;
+	template<typename T> concept always_true = requires { std::same_as<T, T>; };
+	template<typename T> concept is_complex_t = requires (T a, const T b) { { a.real }; { b.real }; };
+	template<typename T> concept arithmetic = requires { requires std::is_arithmetic_v<T>; };
 
-	template<typename T>
-	concept Container = requires(const T a, T b) {
+	template<typename T> concept Container = requires(const T a, T b) {
 		typename T::value_type;
 		typename T::iterator;
 		typename T::const_iterator;
@@ -25,7 +26,18 @@ namespace utils {
 		{ a.empty() } -> std::convertible_to<bool>;
 		requires std::convertible_to<typename T::iterator, typename T::const_iterator>;
 	};
-	
+
+
+	template<typename Range>
+	concept arithmetic_input_range = requires  {
+		requires std::ranges::input_range<Range> && (arithmetic<typename std::ranges::iterator_t<Range>::value_type> || is_complex_t<typename std::ranges::iterator_t<Range>::value_type>);
+	};
+
+	template<typename T, typename Alloc = std::allocator<std::complex<T>>>
+	constexpr Matrix<std::complex<T>, Alloc> to_complex(const Matrix<T>& A) {
+		return A | std::views::transform([](auto&& it) { return std::complex(it); })
+			| std::ranges::to<Matrix<std::complex<T>, Alloc>>();
+	}
 
 	constexpr auto pow(auto base, auto exp) {
 		return std::pow(base, exp);
@@ -37,19 +49,22 @@ namespace utils {
 }
 
 namespace helpers {
-	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto identity(size_t n) -> Matrix<T, Alloc> {
+	// O(N)
+	template<utils::arithmetic T, typename Alloc = std::allocator<T>>
+	constexpr auto identity(size_t n) -> Matrix<T, Alloc> {
 		auto result = Matrix<T, Alloc>(n, n);
 		constexpr auto one = static_cast<T>(1);
-		for (size_t i = 0; i < n; ++i) { result[i][i] = one; }
+		std::ranges::for_each(result.diagonal_range(), [one](auto&& it) {it = one; });
 		return result;
 	}
 
+	// O(N)
 	constexpr auto sum(const utils::Container auto& cnt) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		return std::accumulate(cnt.begin(), cnt.end(), static_cast<value_type>(0));
 	}
 
+	// O(N)
 	constexpr auto abs_sum(const utils::Container auto& cnt) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		auto sum = std::accumulate(cnt.begin(), cnt.end(),
@@ -61,6 +76,15 @@ namespace helpers {
 		return sum;
 	}
 
+	// O(N)
+	constexpr auto max(utils::arithmetic_input_range auto&& r) {
+		using value_type = typename decltype(std::ranges::begin(r))::value_type;
+		auto max_val = std::numeric_limits<value_type>::lowest();
+		std::ranges::for_each(r, [&max_val](auto&& it) { max_val = std::max(it, max_val); });
+		return max_val;
+	}
+
+	// O(N)
 	constexpr auto euclid_norm(const utils::Container auto& cnt) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		auto acc = static_cast<value_type>(0);
@@ -68,11 +92,22 @@ namespace helpers {
 		return utils::sqrt<value_type>(acc);
 	}
 
+	// O(N)
+	template<typename T>
+	constexpr auto matrix_euclid_max_col_norm(const Matrix<T>& A) noexcept {
+		auto max_val = std::numeric_limits<T>::lowest();
+		std::ranges::for_each(A.col_range(), [&max_val](auto&& it) {
+			max_val = std::max(max_val, euclid_norm(it));
+		});
+		return max_val;
+	}
 
+	// O(N)
 	constexpr auto manhattan_norm(const utils::Container auto& cnt) {
 		return abs_sum(cnt);
 	}
 
+	// O(N)
 	constexpr auto lp_norm(const utils::Container auto& cnt, utils::arithmetic auto exp) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		constexpr const auto zero = static_cast<value_type>(0);
@@ -86,15 +121,10 @@ namespace helpers {
 		return utils::pow(fst, snd);
 	}
 
-	constexpr auto infinity_norm(const utils::Container auto& cnt) {
-		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
-		auto max = static_cast<value_type>(0);
-		std::ranges::for_each(cnt, [&max](auto&& it) {
-			max = (it > max) ? it : max;
-		});
-		return max;
-	}
+	// O(N)
+	constexpr auto infinity_norm(const utils::Container auto& cnt) { return max(cnt); }
 
+	// O(N)
 	constexpr auto mean(const utils::Container auto& cnt) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		const auto s = cnt.size();
@@ -102,7 +132,7 @@ namespace helpers {
 		return (sum_ / static_cast<value_type>(s));
 	}
 
-
+	// O(N)
 	constexpr auto abs_mean(const utils::Container auto& cnt) {
 		const auto s = cnt.size();
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
@@ -110,6 +140,7 @@ namespace helpers {
 		return acc / static_cast<value_type>(s);
 	}
 
+	// O(2N)
 	constexpr auto variance(const utils::Container auto& cnt) {
 		const auto m = mean(cnt);
 		const auto rmo = static_cast<decltype(m)>(cnt.size() - 1);
@@ -122,15 +153,18 @@ namespace helpers {
 		return acc / rmo;
 	}
 
+	// O(2N)
 	constexpr auto standard_deviation(const utils::Container auto& cnt) {
 		return utils::sqrt(variance(cnt));
 	}
 
+	// O(N)
 	template<typename T>
 	constexpr auto trace(const Matrix<T>& A) {
 		return sum(A.diagonal_range());
 	}
 
+	// O(N)
 	template<typename T, typename Alloc = std::allocator<T>>
 	constexpr std::vector<T, Alloc> col_means(const Matrix<T>& A) {
 		auto x = A.col_range()
@@ -178,6 +212,9 @@ namespace helpers {
 
 		auto temp = A;
 		auto det = static_cast<value_type>(1);
+#if 1
+		
+#endif
 
 		for (size_type k = 0; k < r; ++k) {
 			size_type max_row = k;
@@ -187,6 +224,9 @@ namespace helpers {
 				auto abs_val = std::abs(temp[i][k]);
 				if (abs_val > max_val) {
 					max_val = abs_val;
+				}
+
+				if (abs_val == max_val) {
 					max_row = i;
 				}
 			}
@@ -214,26 +254,47 @@ namespace helpers {
 		return det;
 	}
 
+#if 0
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
+	constexpr auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
 
 		const auto r = A.rows();
 		const auto c = A.cols();
-		const auto col_means = mean_col(A);
+		const auto col_mean = col_means<T, Alloc>(A);
 
 		auto result = Matrix<T, Alloc>(r, c);
 
 		for (size_type i = 0; i < r; ++i) {
 			for (size_type j = 0; j < c; ++j) {
-				result[i][j] = A[i][j] - col_means[0][j];
+				result[i][j] = A[i][j] - col_mean[j];
 			}
 		}
 
 		return result;
 	}
+#else
+	template<typename T, typename Alloc = std::allocator<T>>
+	constexpr auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
+		using size_type = std::size_t;
+		const auto r = A.rows();
+		const auto c = A.cols();
+		auto result = Matrix<T, Alloc>(r, c);
+
+		for (size_type i = 0; i < c; ++i) {
+			auto ac = A.col(i);
+			auto rc = result.col(i);
+			auto cmean = mean(ac);
+			for (size_type j = 0; j < r; ++j) {
+				rc[j] = ac[j] - cmean;
+			}
+		}
+
+		return result;
+	}
+#endif
 
 	template<typename T, typename Alloc = std::allocator<T>>
 	inline auto covariance(const Matrix<T>& A) -> Matrix<T, Alloc> {
@@ -271,12 +332,16 @@ namespace helpers {
 		const auto p = std::min(m, n);
 
 		// --- 1) Build complex copy of A (so same code works for real/complex T) ---
+#if 0
 		auto A_c = Matrix<complex_t>(m, n);
 		for (size_type i = 0; i < m; ++i) {
 			for (size_type j = 0; j < n; ++j) {
 				A_c[i][j] = complex_t(A[i][j]);
 			}
 		}
+#else
+		auto A_c = utils::to_complex(A);
+#endif
 
 		// --- 2) Accumulate right singular vectors in V (n x n identity) ---
 #if 0
@@ -293,6 +358,7 @@ namespace helpers {
 		constexpr auto eps = std::numeric_limits<Real>::epsilon();
 
 		// matrix norm (use max column 2-norm)
+#if 0
 		auto max_col_norm = static_cast<Real>(0);
 		for (size_type j = 0; j < n; ++j) {
 			auto col_norm_sq = static_cast<Real>(0);
@@ -307,7 +373,8 @@ namespace helpers {
 			}
 		}
 		const Real tol_abs = std::max(Real(1e-300), eps * std::max<Real>(Real(1), max_col_norm) * tol_factor);
-
+#endif
+		const Real tol_abs = std::max(Real(1e-300), eps * std::max<Real>(Real(1), matrix_euclid_max_col_norm(A_c)) * tol_factor);
 		// --- 4) One-sided Jacobi sweeps ---
 		// We'll perform sweeps over pairs (p,q). Convergence when no rotation larger than threshold.
 		for (size_type sweep = 0; sweep < max_sweeps; ++sweep) {
@@ -419,6 +486,7 @@ namespace helpers {
 		} // for sweep
 
 		// --- 5) after convergence: singular values = norms of columns of A_c ---
+#if 0
 		std::vector<Real> sigma(p, Real(0));
 		for (size_type j = 0; j < p; ++j) {
 			Real ssum = Real(0);
@@ -427,8 +495,12 @@ namespace helpers {
 			}
 			sigma[j] = std::sqrt(ssum);
 		}
+#else
+		auto sigma = matrix_euclid_max_col_norm(A_c);
+#endif
 
 		// --- 6) Build U (m x p) as normalized columns of A_c ---
+#if 1
 		Matrix<complex_t> U(m, p);
 		for (size_type j = 0; j < p; ++j) {
 			Real s = sigma[j];
@@ -436,8 +508,7 @@ namespace helpers {
 				for (size_type i = 0; i < m; ++i) {
 					U[i][j] = A_c[i][j] / complex_t(s);
 				}
-			}
-			else {
+			} else {
 				// if sigma is zero (or tiny), produce an orthonormal vector:
 				// choose standard basis vector not yet used
 				for (size_type i = 0; i < m; ++i) {
@@ -449,7 +520,10 @@ namespace helpers {
 				}
 			}
 		}
-
+#else
+		auto U = Matrix<complex_t>(m, p);
+		std::ranges::for_each();
+#endif
 		// --- 7) Build Sigma matrix (p x p diagonal, real) ---
 		Matrix<Real> Sigma(p, p);
 		for (size_type i = 0; i < p; ++i) {
@@ -628,15 +702,8 @@ namespace helpers {
 		return out;
 	}
 
-	template<typename T>
-	inline auto euclid_norm(const std::vector<T>& x) -> T {
-		auto sigma = static_cast<T>(0);
-		for (auto&& elem : x) {	sigma += elem * elem; }
-		return (x[0] >= 0) ? -std::sqrt(sigma) : std::sqrt(sigma);
-	}
-
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto householder_vector(const std::vector<T>& x) -> std::vector<T, Alloc> {
+	constexpr auto householder_vector(const std::vector<T>& x) -> std::vector<T, Alloc> {
 		auto sigma = euclid_norm(x);
 		auto u = x;
 		u[0] = x[0] - sigma;
@@ -646,7 +713,7 @@ namespace helpers {
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto householder_reflection_matrix(const std::vector<T>& x) -> Matrix<T, Alloc> {
+	constexpr auto householder_reflection_matrix(const std::vector<T>& x) -> Matrix<T, Alloc> {
 		using size_type = typename std::decay_t<decltype(x)>::size_type;
 		const auto n = x.size();
 		auto I = identity(n);
