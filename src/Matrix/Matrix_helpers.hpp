@@ -9,9 +9,10 @@
 void helpers_tests();
 
 namespace utils {
-	template<typename T> concept always_true = requires { std::same_as<T, T>; };
-	template<typename T> concept is_complex_t = requires (T a, const T b) { { a.real }; { b.real }; };
-	template<typename T> concept arithmetic = requires { requires std::is_arithmetic_v<T>; };
+	template<typename T> concept custom_complex = requires (T a) { { a.real }; { a.imag }; };
+	template<typename T> concept std_complex = std::is_same_v<T, std::complex<typename T::value_type>>;
+	template<typename T> concept complex = std_complex<T> || custom_complex<T>;
+	template<typename T> concept arithmetic = std::is_arithmetic_v<T>;
 
 	template<typename T> concept Container = requires(const T a, T b) {
 		typename T::value_type;
@@ -28,15 +29,14 @@ namespace utils {
 	};
 
 
-	template<typename Range>
-	concept arithmetic_input_range = requires  {
-		requires std::ranges::input_range<Range> && (arithmetic<typename std::ranges::iterator_t<Range>::value_type> || is_complex_t<typename std::ranges::iterator_t<Range>::value_type>);
-	};
+	template<typename Range> concept arithmetic_input_range = std::ranges::input_range<Range> && arithmetic<typename std::ranges::iterator_t<Range>::value_type>;
+	template<typename Range> concept complex_input_range = std::ranges::input_range<Range> && complex<typename std::ranges::iterator_t<Range>::value_type>;
 
 	template<typename T, typename Alloc = std::allocator<std::complex<T>>>
 	constexpr Matrix<std::complex<T>, Alloc> to_complex(const Matrix<T>& A) {
-		return A | std::views::transform([](auto&& it) { return std::complex(it); })
-			| std::ranges::to<Matrix<std::complex<T>, Alloc>>();
+		auto cm = Matrix<std::complex<T>, Alloc>(A.rows(), A.cols());
+		std::ranges::copy(A, cm.begin());
+		return cm;
 	}
 
 	constexpr auto pow(auto base, auto exp) {
@@ -50,7 +50,11 @@ namespace utils {
 
 namespace helpers {
 	// O(N)
+#if 0
 	template<utils::arithmetic T, typename Alloc = std::allocator<T>>
+#else
+	template<typename T, typename Alloc = std::allocator<T>>
+#endif
 	constexpr auto identity(size_t n) -> Matrix<T, Alloc> {
 		auto result = Matrix<T, Alloc>(n, n);
 		constexpr auto one = static_cast<T>(1);
@@ -85,21 +89,57 @@ namespace helpers {
 	}
 
 	// O(N)
-	constexpr auto euclid_norm(const utils::Container auto& cnt) {
-		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
+	constexpr auto euclid_norm(utils::arithmetic_input_range auto&& r) {
+		using value_type = typename decltype(std::ranges::begin(r))::value_type;
 		auto acc = static_cast<value_type>(0);
-		std::ranges::for_each(cnt, [&acc](auto&& it) { acc += it * it; });
+		std::ranges::for_each(r, [&acc](auto&& it) { acc += it * it; });
 		return utils::sqrt<value_type>(acc);
+	}
+
+	constexpr auto euclid_norm(utils::complex_input_range auto&& r) {
+		using value_type = typename decltype(std::ranges::begin(r))::value_type::value_type;
+		auto acc = static_cast<value_type>(0);
+		std::ranges::for_each(r, [&acc](auto&& it) {
+			const auto t = std::abs(it);
+			acc += t * t;
+		});
+		return utils::sqrt<value_type>(acc);
+	}
+	
+	template<utils::arithmetic T, typename Alloc = std::allocator<T>>
+	constexpr auto matrix_euclid_col_norm(const Matrix<T>& A) {
+		auto x = std::vector<T, Alloc>();
+		x.reserve(A.cols());
+		std::ranges::for_each(A.col_range(), [&x](auto&& it) { x.push_back(euclid_norm(it)); });
+		return x;
+	}
+
+	template<utils::complex T, typename Alloc = std::allocator<typename T::value_type>>
+	constexpr auto complex_matrix_euclid_col_norm(const Matrix<T>& A) {
+		using value_type = typename std::allocator_traits<Alloc>::value_type;
+		auto x = std::vector<value_type, Alloc>();
+		x.reserve(A.rows());
+		std::ranges::for_each(A.col_range(), [&x](auto&& it) { x.push_back(euclid_norm(it)); });
+		return x;
 	}
 
 	// O(N)
 	template<typename T>
 	constexpr auto matrix_euclid_max_col_norm(const Matrix<T>& A) noexcept {
-		auto max_val = std::numeric_limits<T>::lowest();
-		std::ranges::for_each(A.col_range(), [&max_val](auto&& it) {
-			max_val = std::max(max_val, euclid_norm(it));
-		});
-		return max_val;
+		if constexpr (utils::complex<T>) {
+			using value_type = Matrix<T>::value_type::value_type;
+			auto max_val = std::numeric_limits<value_type>::lowest();
+			std::ranges::for_each(A.col_range(), [&max_val](auto&& it) {
+				max_val = std::max(max_val, euclid_norm(it));
+			});
+			return max_val;
+		} else {
+			auto max_val = std::numeric_limits<T>::lowest();
+			std::ranges::for_each(A.col_range(), [&max_val](auto&& it) {
+				max_val = std::max(max_val, euclid_norm(it));
+			});
+			return max_val;
+		}
 	}
 
 	// O(N)
@@ -312,6 +352,240 @@ namespace helpers {
 		return (centered.transpose() * centered) / static_cast<value_type>(r - 1);
 	}
 
+	template<std::floating_point Real, utils::complex Complex = std::complex<Real>>
+	constexpr std::pair<Real, Complex> jacobi_rotation(
+		Real a_pp,       // норма столбца p
+		Real a_qq,       // норма столбца q
+		Complex a_pq,    // скалярное произведение столбцов p и q
+		Real abs_a_pq    // |a_pq| (уже вычисленный модуль)
+	) {
+		auto result = std::pair<Real, Complex>();
+		auto& [c, s] = result;
+
+		// Особые случаи
+		if (abs_a_pq == Real(0)) {
+			c = Real(1);
+			s = Complex(0);
+			return result;
+		}
+
+		// Вычисляем параметр tau
+		Real delta = (a_qq - a_pp) / Real(2);
+		Real tau = delta / abs_a_pq;
+
+		// Стабильная формула для t = tan(theta/2)
+		Real sign_tau = (tau >= Real(0)) ? Real(1) : Real(-1);
+		Real abs_tau = std::abs(tau);
+		Real t = sign_tau / (abs_tau + std::sqrt(Real(1) + tau * tau));
+
+		// Косинус и синус угла вращения
+		c = Real(1) / std::sqrt(Real(1) + t * t);
+		Real sin_magnitude = t * c;  // вещественная амплитуда sin
+
+		// Фаза для комплексного синуса
+		Complex phase = a_pq / Complex(abs_a_pq);  // e^{i*arg(a_pq)}
+		s = Complex(sin_magnitude) * std::conj(phase);  // s = |s| * e^{-i*arg(a_pq)}
+
+		return result;
+	}
+
+	template<std::floating_point value_type>
+	constexpr std::pair<value_type, value_type> jacobi_rotation_dummy(
+		value_type a_pp,
+		value_type a_qq,
+		value_type a_pq,
+		value_type abs_a_pq
+	) {
+		constexpr auto zero = static_cast<value_type>(0);
+		constexpr auto one = static_cast<value_type>(1);
+		constexpr auto two = static_cast<value_type>(2);
+
+		auto result = std::pair<value_type, value_type>(zero, zero);
+		auto& [c, s] = result;
+
+		if (abs_a_pq == zero) {
+			c = one;
+			s = zero;
+			return result;
+		}
+
+		auto delta = (a_qq - a_pp) / two;
+		auto tau = delta / abs_a_pq;
+		auto sign_tau = (tau >= zero) ? one : (zero - 1);
+		auto abs_tau = std::abs(tau);
+		auto t = sign_tau / (abs_tau + std::sqrt(one + tau * tau));
+		c = one / std::sqrt(one + t * t);
+		auto sin_magnitude = t * c;
+		auto phase = a_pq / abs_a_pq;
+		s = sin_magnitude * phase;
+
+		return result;
+	}
+
+	template<std::floating_point T, typename Alloc = std::allocator<T>>
+	constexpr auto svd_jacobi_real(const Matrix<T>& A)
+		-> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>>
+	{
+		using matrix = std::decay_t<decltype(A)>;
+		using size_type = matrix::size_type;
+		using value_type = matrix::value_type;
+
+		const auto m = A.rows();
+		const auto n = A.cols();
+		const auto p = std::min(m, n);
+
+		auto A_c = A;
+
+		auto U = Matrix<T, Alloc>(m, p);
+		auto Sigma = Matrix<T, Alloc>(p, p);
+		auto Vh = Matrix<T, Alloc>(p, n);
+
+		auto V = identity<value_type>(n);
+
+		constexpr auto eps = std::numeric_limits<value_type>::epsilon();
+		constexpr auto zero = static_cast<value_type>(0);
+		constexpr auto one = static_cast<value_type>(1);
+
+		auto sweeps = 0;
+		while (true) {
+			std::cout << ++sweeps << std::endl;
+			bool any_rot = false;
+
+			for (size_type pcol = 0; pcol + 1 < n; ++pcol) {
+				for (size_type qcol = pcol + 1; qcol < n; ++qcol) {
+					auto a_pq = zero;
+					auto a_pp = zero;
+					auto a_qq = zero;
+
+					for (size_type i = 0; i < m; ++i) {
+						auto& ap = A_c[i][pcol];
+						auto& aq = A_c[i][qcol];
+						a_pq = ap * aq;
+						a_pp = ap * ap;
+						a_qq = aq * aq;
+					}
+
+					auto abs_a_pq = std::abs(a_pq);
+					if (abs_a_pq <= eps * std::sqrt(a_pp * a_qq)) {
+						continue;
+					}
+
+					if (a_pp == zero && a_qq == zero) {
+						continue;
+					}
+
+					auto [c, s] = jacobi_rotation_dummy(a_pp, a_qq, a_pq, abs_a_pq);
+					if (std::abs(s) < zero && (std::abs(c - zero) < eps)) {
+						continue;
+					}
+
+					any_rot = true;
+
+					for (size_type i = 0; i < m; ++i) {
+						auto& ap = A_c[i][pcol];
+						auto& aq = A_c[i][qcol];
+
+						auto new_p = c * ap - s * aq;
+						auto new_q = s * ap + c * aq;
+
+						A_c[i][pcol] = new_p;
+						A_c[i][qcol] = new_q;
+					}
+
+					for (size_type i = 0; i < n; ++i) {
+						auto& vp = V[i][pcol];
+						auto& vq = V[i][qcol];
+
+						auto new_vp = c * vp - s * vq;
+						auto new_vq = s * vp + c * vq;
+
+						V[i][pcol] = new_vp;
+						V[i][qcol] = new_vq;
+					}
+				}
+			}
+
+			if (!any_rot) {	break;}
+		} 
+
+
+		// --- 5) after convergence: singular values = norms of columns of A_c ---
+		auto sigma = matrix_euclid_col_norm(A_c);
+
+		// --- 6) Build U (m x p) as normalized columns of A_c ---
+#if 1
+		for (size_type j = 0; j < p; ++j) {
+			auto s = sigma[j];
+			if (s > eps) {
+				for (size_type i = 0; i < m; ++i) {
+					U[i][j] = A_c[i][j] / s;
+				}
+			}	else {
+				for (size_type i = 0; i < m; ++i) {
+					U[i][j] = zero;
+				}
+				// put 1 on diagonal position if exists
+				if (j < m) {
+					U[j][j] = one;
+				}
+			}
+		}
+#else
+		auto U = Matrix<complex_t>(m, p);
+		std::ranges::for_each();
+#endif
+		// --- 7) Build Sigma matrix (p x p diagonal, real) ---
+		for (size_type i = 0; i < p; ++i) {
+			for (size_type j = 0; j < p; ++j) {
+				Sigma[i][j] = zero;
+			}
+			Sigma[i][i] = sigma[i];
+		}
+
+		// --- 8) Build Vh (p x n) = first p rows of V^H ---
+		for (size_type i = 0; i < p; ++i) {
+			for (size_type j = 0; j < n; ++j) {
+				Vh[i][j] = V[j][i];
+			}
+		}
+
+		// --- 9) Optional: sort singular values descending with permutation of U and Vh ---
+		for (size_type i = 0; i < p; ++i) {
+			size_type imax = i;
+			auto smax = sigma[i];
+			for (size_type j = i + 1; j < p; ++j) {
+				if (sigma[j] > smax) {
+					smax = sigma[j];
+					imax = j;
+				}
+			}
+
+			if (imax != i) {
+				auto tmp_s = sigma[i];
+				sigma[i] = sigma[imax];
+				sigma[imax] = tmp_s;
+
+				for (size_type r = 0; r < m; ++r) {
+					std::swap(U[r][i], U[r][imax]);
+				}
+
+				for (size_type c = 0; c < n; ++c) {
+					std::swap(Vh[i][c], Vh[imax][c]);
+				}
+			}
+		}
+
+		for (size_type i = 0; i < p; ++i) {
+			for (size_type j = 0; j < p; ++j) {
+				Sigma[i][j] = zero;
+			}
+			Sigma[i][i] = sigma[i];
+		}
+
+
+		return { U, Sigma, Vh };
+	}
+
 
 	template<std::floating_point Real, typename Alloc = std::allocator<Real>>
 	auto svd_jacobi(const Matrix<Real>& A)
@@ -323,7 +597,7 @@ namespace helpers {
 		using value_type = matrix::value_type;
 
 		constexpr auto max_sweeps = static_cast<size_type>(50);
-		constexpr auto tol_factor = static_cast<value_type>(1e-12);
+		constexpr auto tol_factor = static_cast<value_type>(1e-06);
 
 		using complex_t = std::complex<Real>;
 
@@ -374,10 +648,21 @@ namespace helpers {
 		}
 		const Real tol_abs = std::max(Real(1e-300), eps * std::max<Real>(Real(1), max_col_norm) * tol_factor);
 #endif
+#if 0
 		const Real tol_abs = std::max(Real(1e-300), eps * std::max<Real>(Real(1), matrix_euclid_max_col_norm(A_c)) * tol_factor);
+#else
+#if 0
+		const Real tol_abs = eps * matrix_euclid_max_col_norm(A_c) * tol_factor;
+#else
+		constexpr auto tol_abs = eps;
+#endif
+#endif
 		// --- 4) One-sided Jacobi sweeps ---
 		// We'll perform sweeps over pairs (p,q). Convergence when no rotation larger than threshold.
-		for (size_type sweep = 0; sweep < max_sweeps; ++sweep) {
+		// for (size_type sweep = 0; sweep < max_sweeps; ++sweep) {
+		size_t sweep = 0u;
+		while(true) {
+			std::cout << "Sweep " << sweep++ << std::endl;
 			bool any_rot = false;
 
 			for (size_type pcol = 0; pcol + 1 < n; ++pcol) {
@@ -389,11 +674,11 @@ namespace helpers {
 					Real a_qq = Real(0);
 
 					for (size_type i = 0; i < m; ++i) {
-						const complex_t ap = A_c[i][pcol];
-						const complex_t aq = A_c[i][qcol];
-						a_pq += std::conj(ap) * aq;
-						a_pp += std::norm(ap);   // |ap|^2
-						a_qq += std::norm(aq);   // |aq|^2
+						auto& ap = A_c[i][pcol];
+						auto& aq = A_c[i][qcol];
+						a_pq = std::conj(ap) * aq;
+						a_pp = std::norm(ap);   // |ap|^2
+						a_qq = std::norm(aq);   // |aq|^2
 					}
 
 					// If columns are already (nearly) orthogonal, skip
@@ -411,7 +696,7 @@ namespace helpers {
 					if (a_pp == Real(0) && a_qq == Real(0)) {
 						continue;
 					}
-
+#if 0
 					// compute rotation parameters (see standard one-sided Jacobi derivation)
 					// Let phi = arg(a_pq), g = |a_pq|
 					const Real g = abs_a_pq;
@@ -420,8 +705,7 @@ namespace helpers {
 					Real t;
 					if (g == Real(0)) {
 						t = Real(0);
-					}
-					else {
+					}	else {
 						Real sign_delta = (delta >= Real(0)) ? Real(1) : Real(-1);
 						Real abs_delta = std::abs(delta);
 						t = sign_delta / (abs_delta / g + std::sqrt((abs_delta / g) * (abs_delta / g) + Real(1)));
@@ -442,7 +726,9 @@ namespace helpers {
 					Real tt = t * c; // tt = s magnitude (real)
 					complex_t phase = (g == Real(0)) ? complex_t(1) : (a_pq / complex_t(g)); // unit complex a_pq/|a_pq|
 					complex_t s = complex_t(tt) * std::conj(phase); // s = tt * exp(-i*arg(a_pq))
-
+#else
+					auto [c, s] = jacobi_rotation(a_pp, a_qq, a_pq, abs_a_pq);
+#endif
 					// threshold small rotations
 					if (std::abs(s) < tol_abs && (std::abs(c - Real(1)) < tol_abs)) {
 						continue;
@@ -455,8 +741,8 @@ namespace helpers {
 					// new_col_p = c * col_p - conj(s) * col_q
 					// new_col_q = s * col_p + c * col_q
 					for (size_type i = 0; i < m; ++i) {
-						const complex_t ap = A_c[i][pcol];
-						const complex_t aq = A_c[i][qcol];
+						auto& ap = A_c[i][pcol];
+						auto& aq = A_c[i][qcol];
 
 						complex_t new_p = complex_t(c) * ap - std::conj(s) * aq;
 						complex_t new_q = s * ap + complex_t(c) * aq;
@@ -467,8 +753,8 @@ namespace helpers {
 
 					// --- Accumulate rotation into V: V = V * J (same combination on its columns)
 					for (size_type i = 0; i < n; ++i) {
-						const complex_t vp = V[i][pcol];
-						const complex_t vq = V[i][qcol];
+						auto& vp = V[i][pcol];
+						auto& vq = V[i][qcol];
 
 						complex_t new_vp = complex_t(c) * vp - std::conj(s) * vq;
 						complex_t new_vq = s * vp + complex_t(c) * vq;
@@ -496,7 +782,8 @@ namespace helpers {
 			sigma[j] = std::sqrt(ssum);
 		}
 #else
-		auto sigma = matrix_euclid_max_col_norm(A_c);
+		auto sigma = complex_matrix_euclid_col_norm(A_c);
+		
 #endif
 
 		// --- 6) Build U (m x p) as normalized columns of A_c ---

@@ -8,10 +8,21 @@ template<auto V> struct End {
 	inline constexpr bool operator==(auto&& x) const { return *x == V; }
 };
 
+template<typename T> using distribution = std::conditional_t<
+	std::floating_point<T>,
+	std::uniform_real_distribution<T>,
+	std::uniform_int_distribution<T>
+>;
+
 int main() {
-	auto rd = std::random_device();
-	auto gen = std::mt19937(rd());
-	auto dist = std::uniform_real_distribution<long double>(-5.0L, 5.0L);
+	auto mt = std::mt19937(std::random_device{}());
+
+	auto gen = [&mt]<typename T = unsigned>() -> T {
+		auto min = static_cast<T>(1);
+		auto max = static_cast<T>(100);
+		auto dist = distribution<T>(min, max);
+		return std::invoke(dist, mt);
+	};
 
 	Matrix<float> A(4, 4);
 	A[0][0] = 2.0f; A[0][1] = -0.5f; A[0][2] = 1.0f; A[0][3] = 0.0f;
@@ -103,9 +114,13 @@ int main() {
 	constexpr size_t K = 700;
 	constexpr auto much = 2000U;
 
-	auto J = Matrix<long double>(much, much);
-	std::ranges::generate(J, gen);
+	auto cgen = [&mt]() {
+		auto dist = std::uniform_real_distribution(-100.0L, 100.0L);
+		return std::invoke(dist, mt);
+	};
 
+	auto J = Matrix<long double>(much, much);
+	std::ranges::generate(J, cgen);
 	auto P = Matrix<long double>(M, K);
 	std::ranges::generate(P, gen);
 	auto O = Matrix<long double>(K, N);
@@ -179,12 +194,24 @@ int main() {
 #if 0
 	std::cout << helpers::matrix_euclid_max_col_norm(A) << std::endl;
 #endif
-	using complex_t = typename std::complex<double>;
+
+	using complex_t = typename std::complex<long double>;
 	auto x = std::vector<complex_t>(10);
+	std::ranges::for_each(x, [&gen] (auto&& it) { it = gen(); });
 	auto F = Matrix<complex_t>(10, 10);
 	auto z = helpers::matrix_euclid_max_col_norm(F);
-	
-	// auto&& [U, Sigma, Vh] = helpers::svd_jacobi(J);
+
+	auto euclid_n = helpers::euclid_norm(x);
+	std::cout << euclid_n << std::endl;
+
+#if 0
+	auto E = utils::to_complex(A);
+#endif
+
+	auto&& [U, Sigma, Vh] = helpers::svd_jacobi_real(J);
+	U.print();
+	Sigma.print();
+	Vh.print();
 	// auto&& [Q, R] = helpers::householder_qr_decomposition(J);
 
 	return 0;
