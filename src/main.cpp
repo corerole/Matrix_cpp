@@ -115,7 +115,7 @@ int main() {
 	constexpr auto much = 2000U;
 
 	auto cgen = [&mt]() {
-		auto dist = std::uniform_real_distribution(-100.0L, 100.0L);
+		auto dist = std::uniform_real_distribution(1.0L, 2.0L);
 		return std::invoke(dist, mt);
 	};
 
@@ -209,9 +209,9 @@ int main() {
 #endif
 
 	auto&& [U, Sigma, Vh] = helpers::svd_jacobi_real(J);
-	U.print();
-	Sigma.print();
-	Vh.print();
+	// U.print();
+	// Sigma.print();
+	// Vh.print();
 	// auto&& [Q, R] = helpers::householder_qr_decomposition(J);
 
 	return 0;

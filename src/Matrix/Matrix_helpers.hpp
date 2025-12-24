@@ -411,7 +411,7 @@ namespace helpers {
 
 		auto delta = (a_qq - a_pp) / two;
 		auto tau = delta / abs_a_pq;
-		auto sign_tau = (tau >= zero) ? one : (zero - 1);
+		auto sign_tau = (tau >= zero) ? one : -one;
 		auto abs_tau = std::abs(tau);
 		auto t = sign_tau / (abs_tau + std::sqrt(one + tau * tau));
 		c = one / std::sqrt(one + t * t);
@@ -421,6 +421,23 @@ namespace helpers {
 
 		return result;
 	}
+
+	template<typename T>
+	constexpr auto pq_c(const ColProxy<T>& pcol, const ColProxy<T>& qcol) {
+		constexpr auto zero = static_cast<T>(0);
+		std::tuple<T, T, T> res(zero, zero, zero);
+		auto& [pq, pp, qq] = res;
+		auto qcb = qcol.begin();
+		std::ranges::for_each(pcol, [&pq, &pp, &qq, &qcb](auto&& it) {
+			auto&& ap = it;
+			auto&& aq = *qcb;
+			++qcb;
+			pq += ap * aq;
+			pp += ap * ap;
+			qq += aq * aq;
+			});
+		return res;
+	};
 
 	template<std::floating_point T, typename Alloc = std::allocator<T>>
 	constexpr auto svd_jacobi_real(const Matrix<T>& A)
@@ -452,55 +469,40 @@ namespace helpers {
 			bool any_rot = false;
 
 			for (size_type pcol = 0; pcol + 1 < n; ++pcol) {
+				auto Apc = A_c.col(pcol);
+				auto Vpc = V.col(pcol);
 				for (size_type qcol = pcol + 1; qcol < n; ++qcol) {
-					auto a_pq = zero;
-					auto a_pp = zero;
-					auto a_qq = zero;
+					auto Aqc = A_c.col(qcol);
+					auto Vqc = V.col(qcol);
 
-					for (size_type i = 0; i < m; ++i) {
-						auto& ap = A_c[i][pcol];
-						auto& aq = A_c[i][qcol];
-						a_pq = ap * aq;
-						a_pp = ap * ap;
-						a_qq = aq * aq;
-					}
-
+					auto [a_pq, a_pp, a_qq] = pq_c(Apc, Aqc);
 					auto abs_a_pq = std::abs(a_pq);
-					if (abs_a_pq <= eps * std::sqrt(a_pp * a_qq)) {
-						continue;
-					}
 
-					if (a_pp == zero && a_qq == zero) {
-						continue;
-					}
+
+					if (a_pp == zero && a_qq == zero) continue;
+
+					if (abs_a_pq <= (eps * std::sqrt(a_pp * a_qq))) continue;
 
 					auto [c, s] = jacobi_rotation_dummy(a_pp, a_qq, a_pq, abs_a_pq);
-					if (std::abs(s) < zero && (std::abs(c - zero) < eps)) {
-						continue;
-					}
+
+					if ( (std::abs(s) < zero) && ((std::abs(c - one) < eps)))	continue;
 
 					any_rot = true;
 
 					for (size_type i = 0; i < m; ++i) {
-						auto& ap = A_c[i][pcol];
-						auto& aq = A_c[i][qcol];
+						auto& ap = Apc[i];
+						auto& aq = Aqc[i];
 
-						auto new_p = c * ap - s * aq;
-						auto new_q = s * ap + c * aq;
-
-						A_c[i][pcol] = new_p;
-						A_c[i][qcol] = new_q;
+						Apc[i] = c * ap - s * aq;
+						Aqc[i] = s * ap + c * aq;
 					}
 
 					for (size_type i = 0; i < n; ++i) {
-						auto& vp = V[i][pcol];
-						auto& vq = V[i][qcol];
+						auto& vp = Vpc[i];
+						auto& vq = Vqc[i];
 
-						auto new_vp = c * vp - s * vq;
-						auto new_vq = s * vp + c * vq;
-
-						V[i][pcol] = new_vp;
-						V[i][qcol] = new_vq;
+						Vpc[i] = c * vp - s * vq;
+						Vqc[i] = s * vp + c * vq;
 					}
 				}
 			}
