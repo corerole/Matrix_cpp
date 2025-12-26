@@ -46,6 +46,27 @@ namespace utils {
 	constexpr auto sqrt(auto val) {
 		return std::sqrt(val);
 	}
+
+#if 0
+	constexpr void swap_r(std::ranges::input_range auto&& fst, std::ranges::input_range auto&& snd) {
+		auto sb = snd.begin();
+		std::ranges::for_each(fst, [&sb](auto&& it) {
+			auto& sbr = *sb;
+			std::swap(it, sbr);
+			++sb;
+		});
+	}
+#else
+	void swap_r(std::ranges::input_range auto&& fst, std::ranges::input_range auto&& snd) {
+		auto fb = fst.begin();
+		auto fe = fst.end();
+		auto sb = snd.begin();
+		for (; fb != fe; ++fb, ++sb) {
+			std::iter_swap(fb, sb);
+		}
+	}
+#endif
+
 }
 
 namespace helpers {
@@ -60,6 +81,22 @@ namespace helpers {
 		constexpr auto one = static_cast<T>(1);
 		std::ranges::for_each(result.diagonal_range(), [one](auto&& it) {it = one; });
 		return result;
+	}
+
+	template<utils::arithmetic value_type>
+	constexpr void scale_matrix_self(Matrix<value_type>& A) {
+		constexpr auto zero = static_cast<value_type>(0);
+		constexpr auto one = static_cast<value_type>(1);
+		auto max_val = max(A);
+		auto scale = one / max_val;
+		A *= scale;
+	}
+
+	template<utils::arithmetic value_type, typename Alloc = std::allocator<value_type>>
+	constexpr Matrix<value_type, Alloc> scale_matrix(const Matrix<value_type>& A) {
+		auto B = A;
+		scale_matrix_self(B);
+		return B;
 	}
 
 	// O(N)
@@ -81,11 +118,24 @@ namespace helpers {
 	}
 
 	// O(N)
-	constexpr auto max(utils::arithmetic_input_range auto&& r) {
+	constexpr auto& max(utils::arithmetic_input_range auto&& r) {
 		using value_type = typename decltype(std::ranges::begin(r))::value_type;
-		auto max_val = std::numeric_limits<value_type>::lowest();
-		std::ranges::for_each(r, [&max_val](auto&& it) { max_val = std::max(it, max_val); });
-		return max_val;
+		auto max_val = &(*r.begin());
+		std::ranges::for_each(r, [&max_val](auto&& it) {
+			max_val = (((*max_val) > (it)) ? max_val : &it);
+		});
+		return *max_val;
+	}
+
+	// return non-abs val&
+	constexpr auto& max_abs(utils::arithmetic_input_range auto&& r) {
+		using value_type = typename decltype(std::ranges::begin(r))::value_type;
+		auto max_val = &(*r.begin());
+		std::ranges::for_each(r, [&max_val](auto&& it) {
+			// max_val = &(std::max(it, *max_val)); // std::max return const &Ty_
+			max_val = (((*max_val) > (std::abs(it))) ? max_val : &it);
+		});
+		return *max_val;
 	}
 
 	// O(N)
@@ -259,7 +309,6 @@ namespace helpers {
 		for (size_type k = 0; k < r; ++k) {
 			size_type max_row = k;
 			auto max_val = std::abs(temp[k][k]);
-
 			for (size_type i = k + 1; i < r; ++i) {
 				auto abs_val = std::abs(temp[i][k]);
 				if (abs_val > max_val) {
@@ -294,28 +343,6 @@ namespace helpers {
 		return det;
 	}
 
-#if 0
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
-		using matrix = std::decay_t<decltype(A)>;
-		using size_type = matrix::size_type;
-		using value_type = matrix::value_type;
-
-		const auto r = A.rows();
-		const auto c = A.cols();
-		const auto col_mean = col_means<T, Alloc>(A);
-
-		auto result = Matrix<T, Alloc>(r, c);
-
-		for (size_type i = 0; i < r; ++i) {
-			for (size_type j = 0; j < c; ++j) {
-				result[i][j] = A[i][j] - col_mean[j];
-			}
-		}
-
-		return result;
-	}
-#else
 	template<typename T, typename Alloc = std::allocator<T>>
 	constexpr auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
 		using size_type = std::size_t;
@@ -334,7 +361,6 @@ namespace helpers {
 
 		return result;
 	}
-#endif
 
 	template<typename T, typename Alloc = std::allocator<T>>
 	inline auto covariance(const Matrix<T>& A) -> Matrix<T, Alloc> {
@@ -435,7 +461,7 @@ namespace helpers {
 			pq += ap * aq;
 			pp += ap * ap;
 			qq += aq * aq;
-			});
+		});
 		return res;
 	};
 
@@ -873,7 +899,7 @@ namespace helpers {
 	}
 
 	template<typename T>
-	inline auto find_max_val(Matrix<T>&& A) {
+	constexpr auto find_max_val(const Matrix<T>& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1219,59 +1245,52 @@ namespace helpers {
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto lu(const Matrix<T>& A) -> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>> {
+	constexpr auto lu(const Matrix<T>& A) -> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>> {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
 
-		if (A.rows() != A.cols()) {
-			throw std::runtime_error("LU decomposition is only defined for square matrices");
-		}
-		const size_type n = A.rows();
+		if (!(A.is_square())) { throw std::runtime_error("LU decomposition is only defined for square matrices"); }
+		const auto n = A.rows();
 
 		auto L = identity<T, Alloc>(n);
 		auto U = A;
 		auto P = identity<T, Alloc>(n);
-		for (size_type k = 0; k < n; ++k) {
-			auto max_val = std::abs(U[k][k]);
-			size_type p = k;
+
+		auto swap_rows = [&L, &U, &P](size_type current_row, size_type max_value_row) {
+			utils::swap_r(U.row(current_row), U.row(max_value_row));
+			utils::swap_r(P.row(current_row), P.row(max_value_row));
+			utils::swap_r(L.row(current_row), L.row(max_value_row));
+		};
+
+		auto process = [&U, &L, n](size_type k) {
+			auto Uck = U.col(k);
+			auto Urk = U.row(k);
+			auto Lck = L.col(k);
+			auto& Ukk = Urk[k];
+			// auto& Ukk = Uck[k];
 			for (size_type i = k + 1; i < n; ++i) {
-				auto val = std::abs(U[i][k]);
-				if (val > max_val) {
-					max_val = val;
-					p = i;
-				}
-			}
-
-			if (max_val < std::numeric_limits<value_type>::epsilon()) {
-				throw std::runtime_error("Matrix is singular or nearly singular");
-			}
-
-			if (p != k) {
-				for (size_type j = 0; j < n; ++j) {
-					std::swap(U[k][j], U[p][j]);
-				}
-				for (size_type j = 0; j < n; ++j) {
-					std::swap(P[k][j], P[p][j]);
-				}
-				for (size_type j = 0; j < k; ++j) {
-					std::swap(L[k][j], L[p][j]);
-				}
-			}
-
-			for (size_type i = k + 1; i < n; ++i) {
-				L[i][k] = U[i][k] / U[k][k];
+				Lck[i] = Uck[i] / Ukk;
+				auto Uri = U.row(i);
+				auto& Lik = Lck[i];
 				for (size_type j = k; j < n; ++j) {
-					U[i][j] -= L[i][k] * U[k][j];
+					Uri[j] -= Lik * Urk[j];
 				}
 			}
-		}
+		};
+
+		std::ranges::for_each(U.col_range(), [&U, &swap_rows, &process](auto&& it) {
+			auto [r, c] = U.get_indices(it[0]);
+			auto mv_row = U.get_elem_row_index(max_abs(it));
+			if (mv_row != c) { swap_rows(c, mv_row); }
+			process(c);
+		});
 
 		return std::make_tuple(P, L, U);
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto lu_solve(const Matrix<T>& A, const Matrix<T>& B) -> Matrix<T, Alloc> {
+	constexpr auto lu_solve(const Matrix<T>& A, const Matrix<T>& B) -> Matrix<T, Alloc> {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1284,7 +1303,7 @@ namespace helpers {
 			throw std::runtime_error("Matrix and right-hand side dimensions don't match");
 		}
 
-		// Perform LU decomposition with pivoting
+		// Perform LU decomposition
 		auto [P, L, U] = lu<T, Alloc>(A);
 
 		const auto n = A.rows();
@@ -1296,24 +1315,34 @@ namespace helpers {
 		// Forward substitution for each column: LY = PB
 		auto Y = Matrix<T, Alloc>(n, m);
 		for (size_type col = 0; col < m; ++col) {
+			auto PBcc = P.col(col);
+			auto Ycc = Y.col(col);
 			for (size_type i = 0; i < n; ++i) {
-				auto sum = PB[i][col];
+				auto sum = PBcc[i];
+				auto Lri = L.row(i);
+				auto& Lii = Lri[i];
+				auto& Yci = Ycc[i];
+
 				for (size_type j = 0; j < i; ++j) {
-					sum -= L[i][j] * Y[j][col];
+					sum -= Lri[j] * Ycc[j];
 				}
-				Y[i][col] = sum / L[i][i];
+				Yci = sum / Lii;
 			}
 		}
 
 		// Backward substitution for each column: UX = Y
 		auto X = Matrix<T, Alloc>(n, m);
 		for (size_type col = 0; col < m; ++col) {
-			for (size_type i = n; i-- > 0; ) {
-				auto sum = Y[i][col];
+			auto Ycc = Y.col(col);
+			auto Xcc = X.col(col);
+			for (size_type i = n; i-- > 0;) {
+				auto sum = Ycc[i];
+				auto Uri = U.row(i);
+				auto& Uii = Uri[i];
 				for (size_type j = i + 1; j < n; ++j) {
-					sum -= U[i][j] * X[j][col];
+					sum -= Uri[j] * Xcc[j];
 				}
-				X[i][col] = sum / U[i][i];
+				Xcc[i] = sum / Uii;
 			}
 		}
 

@@ -115,14 +115,14 @@ int main() {
 	constexpr auto much = 2000U;
 
 	auto cgen = [&mt]() {
-		auto dist = std::uniform_real_distribution(1.0L, 2.0L);
+		auto dist = std::uniform_real_distribution(-1000.0L, 1000.0L);
 		return std::invoke(dist, mt);
 	};
 
 	auto J = Matrix<long double>(much, much);
 	std::ranges::generate(J, cgen);
-	auto P = Matrix<long double>(M, K);
-	std::ranges::generate(P, gen);
+	// auto P = Matrix<long double>(M, K);
+	// std::ranges::generate(P, gen);
 	auto O = Matrix<long double>(K, N);
 	std::ranges::generate(O, gen);
 
@@ -208,10 +208,21 @@ int main() {
 	auto E = utils::to_complex(A);
 #endif
 
+#if 0
+	std::cout << "\nHUGE MATRIX\n";
+	std::cout << helpers::matrix_euclid_max_col_norm(J) << std::endl;
+	
 	auto&& [U, Sigma, Vh] = helpers::svd_jacobi_real(J);
-	// U.print();
-	// Sigma.print();
-	// Vh.print();
+
+	U.print();
+	Sigma.print();
+	Vh.print();
+#endif
+	try {
+		auto [P, L, U] = helpers::lu(J);
+	} catch(const std::exception& e) {
+		std::cout << e.what() << std::endl;
+	}
 	// auto&& [Q, R] = helpers::householder_qr_decomposition(J);
 
 	return 0;

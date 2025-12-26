@@ -67,7 +67,7 @@ constexpr row_const_iterator<T> operator+(
 }
 
 template<typename T>
-struct row_iterator final : public row_const_iterator<T> {
+struct row_iterator : public row_const_iterator<T> {
 	private:
 		using base_t = row_const_iterator<T>;
 		using base_t::ptr;
@@ -89,28 +89,25 @@ struct row_iterator final : public row_const_iterator<T> {
 			: base_t(ptr) {
 		}
 
-		constexpr const_reference operator*() const noexcept {
-			return const_cast<reference>(base_t::operator*());
-		}
+		constexpr reference operator*() const noexcept { return *ptr; }
+		constexpr pointer operator->() const noexcept { return ptr; }
 
-		constexpr const_pointer operator->() const noexcept {
-			return const_cast<pointer>(base_t::operator->());
-		}
+		constexpr reference operator[](difference_type n) const noexcept { return *(ptr + n); }
 
-		constexpr reference operator[](difference_type n) noexcept { return *(ptr + n); }
-		constexpr const_reference operator[](difference_type n) const noexcept { return base_t::operator[](n); }
+		constexpr row_iterator& operator++() noexcept {++ptr; return *this; }
+		constexpr row_iterator operator++(int) noexcept { auto tmp = *this; ++ptr; return tmp; }
+		constexpr row_iterator& operator--() noexcept { --ptr; return *this; }
+		constexpr row_iterator operator--(int) noexcept { auto tmp = *this; --ptr; return tmp; }
 
-		constexpr row_iterator& operator++() noexcept { base_t::operator++(); return *this; }
-		constexpr row_iterator operator++(int) noexcept { auto tmp = *this; base_t::operator++(); return tmp; }
-		constexpr row_iterator& operator--() noexcept { base_t::operator--(); return *this; }
-		constexpr row_iterator operator--(int) noexcept { auto tmp = *this; base_t::operator--(); return tmp; }
+		constexpr row_iterator& operator+=(difference_type n) noexcept { ptr += n; return *this; }
+		constexpr row_iterator& operator-=(difference_type n) noexcept { ptr -= n; return *this; }
 
-		constexpr row_iterator& operator+=(difference_type n) noexcept { base_t::operator+=(n); return *this; }
-		constexpr row_iterator& operator-=(difference_type n) noexcept { base_t::operator-=(n); return *this; }
-
-		constexpr row_iterator operator+(difference_type n) const noexcept { return row_iterator(const_cast<pointer>(ptr + n)); }
-		constexpr row_iterator operator-(difference_type n) const noexcept { return row_iterator(const_cast<pointer>(ptr - n)); }
+		constexpr row_iterator operator+(difference_type n) const noexcept { return row_iterator(ptr + n); }
+		constexpr row_iterator operator-(difference_type n) const noexcept { return row_iterator(ptr - n); }
 		constexpr difference_type operator-(const row_iterator& o) const noexcept { return ptr - o.ptr; }
+
+		constexpr bool operator==(const row_iterator& o) const noexcept { return ptr == o.ptr; }
+		constexpr auto operator<=>(const row_iterator& o) const noexcept { return ptr <=> o.ptr; }
 };
 
 template<typename T>
@@ -141,10 +138,29 @@ struct RowProxy final : public std::ranges::view_interface<RowProxy<T>> {
 	private:
 		pointer row_data = nullptr;
 		const size_type cols = 0;
+
 	public:
 		constexpr RowProxy() noexcept = default;
 		constexpr RowProxy(pointer data, size_type c) noexcept : row_data(data), cols(c) {}
 
+#if 0
+		constexpr RowProxy& operator=(const RowProxy& other) {
+			if (other.row_data == row_data) { return *this; }
+			if (other.size() != size()) { throw std::runtime_error(" RowProxy& operator=(const RowProxy& o) | different lenght"); }
+			std::copy(other.begin(), other.end(), begin());
+			return *this;
+		}
+
+		constexpr RowProxy& operator=(RowProxy&& other) {
+			if (other.row_data == row_data) { return *this; }
+			if (other.size() != size()) { throw std::runtime_error(" RowProxy& operator=(RowProxy&& o) | different lenght"); }
+			std::copy(other.begin(), other.end(), begin());
+			return *this;
+		}
+
+		constexpr RowProxy(const RowProxy& other) : row_data(other.row_data), cols(other.cols) { }
+		constexpr RowProxy(RowProxy&& other) : row_data(other.row_data), cols(other.cols) {}
+#endif
 	public:
 		constexpr reference operator[](size_type c) {
 			return row_data[c];
@@ -153,6 +169,7 @@ struct RowProxy final : public std::ranges::view_interface<RowProxy<T>> {
 		constexpr const_reference operator[](size_type c) const {
 			return row_data[c];
 		}
+
 		
 	public:
 		constexpr iterator begin() noexcept { return iterator(row_data); }
@@ -822,6 +839,29 @@ static_assert(std::random_access_iterator<matrix_diagonal_iterator<int>>);
 
 template<typename T> constexpr auto maybe_null(T ptr) { return ptr ? std::addressof(*ptr) : nullptr; }
 
+
+static_assert(std::ranges::input_range<RowProxy<int>>);
+static_assert(std::ranges::input_range<ColProxy<int>>);
+static_assert(std::ranges::input_range<RowProxy<const int>>);
+static_assert(std::ranges::input_range<ColProxy<const int>>);
+static_assert(std::ranges::input_range<std::add_const_t<RowProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_const_t<ColProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_const_t<RowProxy<const int>>>);
+static_assert(std::ranges::input_range<std::add_const_t<ColProxy<const int>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<RowProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<ColProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<RowProxy<const int>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<ColProxy<const int>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<RowProxy<int>>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<ColProxy<int>>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<RowProxy<const int>>>>);
+static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<ColProxy<const int>>>>);
+static_assert(std::ranges::input_range<std::add_rvalue_reference_t<RowProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_rvalue_reference_t<ColProxy<int>>>);
+static_assert(std::ranges::input_range<std::add_rvalue_reference_t<RowProxy<const int>>>);
+static_assert(std::ranges::input_range<std::add_rvalue_reference_t<ColProxy<const int>>>);
+
+
 template<typename T, typename Alloc = std::allocator<T>>
 struct Matrix {
 	public:
@@ -945,27 +985,45 @@ struct Matrix {
 		constexpr size_type cols() const noexcept { return _cols; }
 		constexpr bool empty() const noexcept { return ((_rows == 0) || (_cols == 0)); }
 		constexpr bool is_square() const noexcept { return _rows == _cols; }
-		std::pair<size_type, size_type> get_index(const value_type& elem) const {
-			auto&& x = std::addressof(elem);
-			static_assert( ((x < _data) || (x >= _data + _rows * _cols)) );
-#if 0
-			if (x < _data || x >= _data + _rows * _cols) {
-				throw std::runtime_error("get_index: element not in array bounds");
-			}
-#endif
-			const auto offset = static_cast<size_type>(x - _data);
-			return { offset / _cols, offset % _cols };
+
+		constexpr size_type get_elem_row_index(const value_type& elem) const noexcept {
+			auto x = std::addressof(elem);
+			// if (((x < _data) || (x >= _data + _rows * _cols))) { throw std::runtime_error("elem Out of bound"); };
+			auto z = static_cast<size_type>(x - _data);
+			return (z / _cols);
+		}
+		constexpr RowProxy<const value_type> get_elem_row(const value_type& elem) const noexcept {
+			return row(get_elem_row_index(elem));
 		}
 
+		constexpr RowProxy<value_type> get_elem_row(const value_type& elem) noexcept {
+			return row(get_elem_row_index(elem));
+		}
+
+		constexpr size_type get_elem_col_index(const value_type& elem) const noexcept {
+			auto x = std::addressof(elem);
+			// if(((x < _data) || (x >= _data + _rows * _cols))) { throw std::runtime_error("elem Out of bound"); };
+			auto z = static_cast<size_type>(x - _data);
+			return (z % _cols);
+		}
+
+		constexpr ColProxy<const value_type> get_elem_col(const value_type& elem) const noexcept {
+			return col(get_elem_col_index(elem));
+		}
+
+		constexpr ColProxy<value_type> get_elem_col(const value_type& elem) noexcept {
+			return col(get_elem_col_index(elem));
+		}
+
+		constexpr std::pair<size_type, size_type> get_indices(const value_type& elem) const {
+			return { get_elem_row_index(elem), get_elem_col_index(elem) };
+		}
+
+		constexpr pointer data() noexcept { return maybe_null(_data); }
+		constexpr const_pointer data() const noexcept { return maybe_null(_data); }
+
+	public:
 		/* default */
-		[[nodiscard]] constexpr pointer data() noexcept {
-			return maybe_null(_data);
-		}
-
-		[[nodiscard]] constexpr const_pointer data() const noexcept {
-			return maybe_null(_data);
-		}
-
 		[[nodiscard]] constexpr iterator begin() noexcept {
 			return iterator(_data);
 		}
@@ -1197,65 +1255,65 @@ struct Matrix {
 	public:
 		/* row */
 		[[nodiscard]] constexpr auto row_range() noexcept {
-			return std::ranges::subrange(row_begin(), row_end());
+			return std::ranges::subrange(row_begin(), row_end(), _cols);
 		}
 
 		[[nodiscard]] constexpr auto row_range() const noexcept {
-			return std::ranges::subrange(row_cbegin(), row_cend());
+			return std::ranges::subrange(row_cbegin(), row_cend(), _cols);
 		}
 
 		[[nodiscard]] constexpr auto row_const_range() const noexcept {
-			return std::ranges::subrange(row_cbegin(), row_cend());
+			return std::ranges::subrange(row_cbegin(), row_cend(), _cols);
 		}
 
 		[[nodiscard]] constexpr auto row_reverse_range() noexcept {
-			return std::ranges::subrange(row_rbegin(), row_rend());
+			return std::ranges::subrange(row_rbegin(), row_rend(), _cols);
 		}
 
 		[[nodiscard]] constexpr auto row_const_reverse_range() const noexcept {
-			return std::ranges::subrange(row_crbegin(), row_crend());
+			return std::ranges::subrange(row_crbegin(), row_crend(), _cols);
 		}
 		
 		/* col */
 		[[nodiscard]] constexpr auto col_range() noexcept {
-			return std::ranges::subrange(col_begin(), col_end());
+			return std::ranges::subrange(col_begin(), col_end(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto col_range() const noexcept {
-			return std::ranges::subrange(col_cbegin(), col_cend());
+			return std::ranges::subrange(col_cbegin(), col_cend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto col_const_range() const noexcept {
-			return std::ranges::subrange(col_cbegin(), col_cend());
+			return std::ranges::subrange(col_cbegin(), col_cend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto col_reverse_range() noexcept {
-			return std::ranges::subrange(col_rbegin(), col_rend());
+			return std::ranges::subrange(col_rbegin(), col_rend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto col_const_reverse_range() const noexcept {
-			return std::ranges::subrange(col_crbegin(), col_crend());
+			return std::ranges::subrange(col_crbegin(), col_crend(), _rows);
 		}
 
 		/* diagonal */
 		[[nodiscard]] constexpr auto diagonal_range() noexcept {
-			return std::ranges::subrange(diagonal_begin(), diagonal_end());
+			return std::ranges::subrange(diagonal_begin(), diagonal_end(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto diagonal_range() const noexcept {
-			return std::ranges::subrange(diagonal_cbegin(), diagonal_cend());
+			return std::ranges::subrange(diagonal_cbegin(), diagonal_cend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto diagonal_const_range() const noexcept {
-			return std::ranges::subrange(diagonal_cbegin(), diagonal_cend());
+			return std::ranges::subrange(diagonal_cbegin(), diagonal_cend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto diagonal_reverse_range() noexcept {
-			return std::ranges::subrange(diagonal_rbegin(), diagonal_rend());
+			return std::ranges::subrange(diagonal_rbegin(), diagonal_rend(), _rows);
 		}
 
 		[[nodiscard]] constexpr auto diagonal_const_reverse_range() const noexcept {
-			return std::ranges::subrange(diagonal_crbegin(), diagonal_crend());
+			return std::ranges::subrange(diagonal_crbegin(), diagonal_crend(), _rows);
 		}
 		
 	public:
