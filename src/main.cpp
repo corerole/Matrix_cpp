@@ -17,13 +17,7 @@ template<typename T> using distribution = std::conditional_t<
 int main() {
 	auto mt = std::mt19937(std::random_device{}());
 
-	auto gen = [&mt]<typename T = unsigned>() -> T {
-		auto min = static_cast<T>(1);
-		auto max = static_cast<T>(100);
-		auto dist = distribution<T>(min, max);
-		return std::invoke(dist, mt);
-	};
-
+#if 0
 	Matrix<float> A(4, 4);
 	A[0][0] = 2.0f; A[0][1] = -0.5f; A[0][2] = 1.0f; A[0][3] = 0.0f;
 	A[1][0] = 1.0f; A[1][1] = -1.0f; A[1][2] = 0.0f; A[1][3] = 2.0f;
@@ -45,7 +39,7 @@ int main() {
 	C[0][0] = 1.0f;  C[0][1] = 2.0f; C[0][2] = 3.0f;
 	C[1][0] = -4.0f; C[1][1] = 5.0f; C[1][2] = 6.0f;
 	C[2][0] = 1.0f;  C[2][1] = 0.0f; C[2][2] = -2.0f;
-
+#endif
 
 #if 0
 	auto x = A.col(0);
@@ -109,24 +103,19 @@ int main() {
 #endif
 
 #if 1
-	constexpr size_t M = 500;
-	constexpr size_t N = 600;
-	constexpr size_t K = 700;
-	constexpr auto much = 2000U;
-
-	auto cgen = [&mt]() {
-		auto dist = std::uniform_real_distribution(-1000.0L, 1000.0L);
+	auto cgen = [&mt]<typename T>(T min, T max) {
+		auto dist = distribution<T>(min, max);
 		return std::invoke(dist, mt);
 	};
 
-	auto J = Matrix<long double>(much, much);
-	std::ranges::generate(J, cgen);
-	// auto P = Matrix<long double>(M, K);
-	// std::ranges::generate(P, gen);
-	auto O = Matrix<long double>(K, N);
-	std::ranges::generate(O, gen);
+	auto test = [&cgen]<typename T>(size_t rows, size_t cols, T min, T max, bool print) {
+		auto test = Matrix<long double>(rows, cols);
+		std::ranges::generate(test, [&cgen, min, max]{ return std::invoke(cgen, min, max); });
+		std::cout << "Test Matrix: " << std::endl;
+		if(print) test.print();
+		return test;
+	};
 
-	std::cout << "Filled! " << std::endl;
 #endif
 
 #if 0
@@ -195,6 +184,7 @@ int main() {
 	std::cout << helpers::matrix_euclid_max_col_norm(A) << std::endl;
 #endif
 
+#if 0
 	using complex_t = typename std::complex<long double>;
 	auto x = std::vector<complex_t>(10);
 	std::ranges::for_each(x, [&gen] (auto&& it) { it = gen(); });
@@ -203,6 +193,7 @@ int main() {
 
 	auto euclid_n = helpers::euclid_norm(x);
 	std::cout << euclid_n << std::endl;
+#endif
 
 #if 0
 	auto E = utils::to_complex(A);
@@ -219,7 +210,15 @@ int main() {
 	Vh.print();
 #endif
 	try {
-		auto [P, L, U] = helpers::lu(J);
+#if 0
+		 auto&& [L, U, P] = helpers::lu(test(5, 5, 0.5L, 3.0L));
+	
+		L.print();
+		U.print();
+		P.print();
+#endif
+		auto obj = test(2000, 2000, 0.5, 3.0, 0);
+		auto&& [U , sigma, vh] = helpers::svd_jacobi_real(obj);
 	} catch(const std::exception& e) {
 		std::cout << e.what() << std::endl;
 	}

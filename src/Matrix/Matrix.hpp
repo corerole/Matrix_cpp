@@ -19,14 +19,43 @@
 #include <future>
 #include <chrono>
 
-template<typename T>
+namespace detail {
+	template<typename T> concept object = requires {
+		requires !std::is_const_v<T>;
+		requires !std::is_volatile_v<T>;
+		requires !std::is_lvalue_reference_v<T>;
+	};
+	
+	template<object T> struct TestCont {
+		public:
+			using allocator_type = std::allocator<T>;
+			using allocator_traits = std::allocator_traits<allocator_type>;
+
+		public:
+			using value_type = typename allocator_traits::value_type;
+			using pointer = typename allocator_traits::pointer;
+			using const_pointer = typename allocator_traits::const_pointer;
+			using size_type = typename allocator_traits::size_type;
+			using difference_type = typename allocator_traits::difference_type;
+			using reference = value_type&;
+			using const_reference = const value_type&;
+	};
+
+	using tCont = typename TestCont<float>;
+}
+
+template<typename Cont>
 struct row_const_iterator {
 	public:
-		using value_type = T;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using const_reference = const value_type&;
-		using difference_type = std::ptrdiff_t;
+		using value_type = Cont::value_type;
+		using pointer = Cont::pointer;
+		using const_pointer = Cont::const_pointer;
+		using size_type = Cont::size_type;
+		using difference_type = Cont::difference_type;
+		using reference = Cont::reference;
+		using const_reference = Cont::const_reference;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::contiguous_iterator_tag;
 
@@ -66,29 +95,28 @@ constexpr row_const_iterator<T> operator+(
 	return it + n;
 }
 
-template<typename T>
-struct row_iterator : public row_const_iterator<T> {
+template<typename Cont>
+struct row_iterator : public row_const_iterator<Cont> {
 	private:
-		using base_t = row_const_iterator<T>;
-		using base_t::ptr;
+		using base_t = row_const_iterator<Cont>;
+		
 	public:
 		using typename base_t::value_type;
 		using typename base_t::pointer;
 		using typename base_t::const_pointer;
-		using typename base_t::const_reference;
-		using reference = value_type&;
+		using typename base_t::size_type;
 		using typename base_t::difference_type;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
+
+	public:
+		using base_t::ptr;
 
 	public:
 		constexpr row_iterator() noexcept = default;
-		constexpr explicit row_iterator(pointer p) noexcept
-			: base_t(p) {
-		}
+		constexpr explicit row_iterator(pointer p) noexcept : base_t(p) { }
 
-		constexpr row_iterator(const base_t& it) noexcept
-			: base_t(ptr) {
-		}
-
+	public:
 		constexpr reference operator*() const noexcept { return *ptr; }
 		constexpr pointer operator->() const noexcept { return ptr; }
 
@@ -117,59 +145,87 @@ constexpr row_iterator<T> operator+(
 	return it + n;
 }
 
-static_assert(std::contiguous_iterator<row_iterator<int>>);
-static_assert(std::contiguous_iterator<row_const_iterator<int>>);
+static_assert(std::contiguous_iterator<row_iterator<detail::tCont>>);
+static_assert(std::contiguous_iterator<row_const_iterator<detail::tCont>>);
 
-template<typename T>
-struct RowProxy final : public std::ranges::view_interface<RowProxy<T>> {
+template<typename Cont>
+struct const_RowProxy : public std::ranges::view_interface<const_RowProxy<Cont>> {
 	public:
-		using value_type = T;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using reference = value_type&;
-		using const_reference = const value_type&;
-		using size_type = std::size_t;
+		using value_type = Cont::value_type;
+		using pointer = Cont::pointer;
+		using const_pointer = Cont::const_pointer;
+		using size_type = Cont::size_type;
+		using difference_type = Cont::difference_type;
+		using reference = Cont::reference;
+		using const_reference = Cont::const_reference;
 
-		using iterator = row_iterator<T>;
-		using const_iterator = row_const_iterator<T>;
+	public:
+		using iterator = row_const_iterator<Cont>;
+		using const_iterator = iterator;
+		using reverse_iterator = std::reverse_iterator<const_iterator>;
+		using const_reverse_iterator = reverse_iterator;
+
+	protected:
+		pointer row_data = nullptr;
+		size_type cols = 0;
+
+	public:
+		constexpr const_RowProxy() = default;
+		constexpr const_RowProxy(pointer p, size_type c) : row_data(p), cols(c) {}
+
+	public:
+		constexpr const_reference operator[](size_type c) const { return row_data[c]; }
+
+	public:
+		constexpr const_iterator begin() const noexcept { return const_iterator(row_data); }
+		constexpr const_iterator end() const noexcept { return const_iterator(row_data + cols); }
+		constexpr const_iterator cbegin() const noexcept { return const_iterator(begin()); }
+		constexpr const_iterator cend() const noexcept { return const_iterator(end()); }
+		constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+		constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+		constexpr const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(cend()); }
+		constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(cbegin()); }
+
+	public:
+		constexpr bool empty() const noexcept { return cols == 0; }
+		constexpr const_reference front() const { return *row_data; }
+		constexpr const_reference back() const { return row_data[cols - 1]; }
+		constexpr size_type size() const noexcept { return cols; }
+		constexpr pointer data() const noexcept { return row_data; }
+};
+
+static_assert(std::ranges::view<const_RowProxy<detail::tCont>>);
+
+template<typename Cont>
+struct RowProxy final : public const_RowProxy<Cont> {
+	private:
+		using base_t = const_RowProxy<Cont>;
+
+	public:
+		using typename base_t::value_type;
+		using typename base_t::pointer;
+		using typename base_t::const_pointer;
+		using typename base_t::size_type;
+		using typename base_t::difference_type;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
+
+	public:
+		using iterator = row_iterator<Cont>;
+		using const_iterator = row_const_iterator<Cont>;
 		using reverse_iterator = std::reverse_iterator<iterator>;
 		using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
 	private:
-		pointer row_data = nullptr;
-		const size_type cols = 0;
+		using base_t::row_data;
+		using base_t::cols;
 
 	public:
 		constexpr RowProxy() noexcept = default;
-		constexpr RowProxy(pointer data, size_type c) noexcept : row_data(data), cols(c) {}
+		constexpr RowProxy(pointer data, size_type c) noexcept : base_t(data, c) {};
 
-#if 0
-		constexpr RowProxy& operator=(const RowProxy& other) {
-			if (other.row_data == row_data) { return *this; }
-			if (other.size() != size()) { throw std::runtime_error(" RowProxy& operator=(const RowProxy& o) | different lenght"); }
-			std::copy(other.begin(), other.end(), begin());
-			return *this;
-		}
-
-		constexpr RowProxy& operator=(RowProxy&& other) {
-			if (other.row_data == row_data) { return *this; }
-			if (other.size() != size()) { throw std::runtime_error(" RowProxy& operator=(RowProxy&& o) | different lenght"); }
-			std::copy(other.begin(), other.end(), begin());
-			return *this;
-		}
-
-		constexpr RowProxy(const RowProxy& other) : row_data(other.row_data), cols(other.cols) { }
-		constexpr RowProxy(RowProxy&& other) : row_data(other.row_data), cols(other.cols) {}
-#endif
 	public:
-		constexpr reference operator[](size_type c) {
-			return row_data[c];
-		}
-
-		constexpr const_reference operator[](size_type c) const {
-			return row_data[c];
-		}
-
+		constexpr reference operator[](size_type c) { return row_data[c];	}
 		
 	public:
 		constexpr iterator begin() noexcept { return iterator(row_data); }
@@ -193,15 +249,20 @@ struct RowProxy final : public std::ranges::view_interface<RowProxy<T>> {
 		constexpr pointer data() const noexcept { return row_data; }
 };
 
-template<typename T>
+static_assert(std::ranges::view<RowProxy<detail::tCont>>);
+
+template<typename Cont>
 struct stride_const_iterator {
 	public:
-		using value_type = T;
-		using difference_type = std::ptrdiff_t;
-		using size_type = std::size_t;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using const_reference = const value_type&;
+		using value_type = Cont::value_type;
+		using pointer = Cont::pointer;
+		using const_pointer = Cont::const_pointer;
+		using size_type = Cont::size_type;
+		using difference_type = Cont::difference_type;
+		using reference = Cont::reference;
+		using const_reference = Cont::const_reference;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::random_access_iterator_tag;
 
@@ -211,9 +272,7 @@ struct stride_const_iterator {
 
 	public:
 		constexpr stride_const_iterator() noexcept = default;
-		constexpr stride_const_iterator(pointer p, size_type s) noexcept
-			: ptr(p), step(s) {
-		}
+		constexpr stride_const_iterator(pointer p, size_type s) noexcept : ptr(p), step(s) {}
 
 		constexpr const_reference operator*() const noexcept { return *ptr; }
 		constexpr const_pointer operator->() const noexcept { return ptr; }
@@ -230,7 +289,7 @@ struct stride_const_iterator {
 		constexpr stride_const_iterator operator-(difference_type n) const noexcept { return stride_const_iterator(ptr - n * step, step); }
 
 		constexpr difference_type operator-(const stride_const_iterator& o) const noexcept {
-			return (ptr - o.ptr) / static_cast<difference_type>(step);
+			return (ptr - o.ptr) / step;
 		}
 
 		constexpr const_reference operator[](difference_type n) const noexcept { return *(ptr + n * step); }
@@ -246,67 +305,59 @@ constexpr stride_const_iterator<T> operator+(
 	return it + n;
 }
 
-template<typename T>
-struct stride_iterator final : public stride_const_iterator<T> {
+static_assert(std::random_access_iterator<stride_const_iterator<detail::tCont>>);
+
+template<typename Cont>
+struct stride_iterator final : public stride_const_iterator<Cont> {
 	private:
-		using base_t = stride_const_iterator<T>;
+		using base_t = stride_const_iterator<Cont>;
 
 	public:
-		using value_type = T;
+		using typename base_t::value_type;
 		using typename base_t::pointer;
 		using typename base_t::const_pointer;
-		using typename base_t::const_reference;
 		using typename base_t::size_type;
-		using reference = value_type&;
 		using typename base_t::difference_type;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
+
+	public:
+		using iterator_category = std::random_access_iterator_tag;
+		using iterator_concept = std::random_access_iterator_tag;
+
+	private:
+		using base_t::ptr;
+		using base_t::step;
 
 	public:
 		constexpr stride_iterator() noexcept = default;
-		constexpr stride_iterator(pointer p, std::size_t s) noexcept
-			: base_t(p, s) {
+		constexpr stride_iterator(pointer p, size_type s) noexcept : base_t(p, s) { }
+
+		constexpr reference operator*() const noexcept { return *ptr;	}
+		constexpr pointer operator->() const noexcept { return ptr; }
+
+		constexpr reference operator[](difference_type n) const noexcept {
+			return *(ptr + n * step);
 		}
 
-		constexpr stride_iterator(const base_t& it) noexcept
-			: base_t(it.ptr, it.step) {
-		}
+		constexpr stride_iterator& operator++() noexcept { ptr += step; return *this; }
+		constexpr stride_iterator operator++(int) noexcept { auto tmp = *this; ptr += step; return tmp; }
+		constexpr stride_iterator& operator--() noexcept { ptr -= step; return *this; }
+		constexpr stride_iterator operator--(int) noexcept { auto tmp = *this; ptr -= step; return tmp; }
 
-		constexpr reference operator*() const noexcept {
-			return const_cast<reference>(base_t::operator*());
-		}
-		constexpr pointer operator->() const noexcept {
-			return const_cast<pointer>(base_t::operator->());
-		}
+		constexpr stride_iterator& operator+=(difference_type n) noexcept { ptr += n * step; return *this; }
+		constexpr stride_iterator& operator-=(difference_type n) noexcept { ptr -= n * step; return *this; }
 
-		constexpr auto operator<=>(const stride_iterator& o) const noexcept {
-			return base_t::operator<=>(o);
-		}
-
-		constexpr bool operator==(const stride_iterator& o) const noexcept {
-			return base_t::operator==(o);
-		}
-
-		constexpr reference operator[](difference_type n) noexcept {
-			return *(base_t::ptr + n * base_t::step);
-		}
-
-		constexpr const reference operator[](difference_type n) const noexcept {
-			return base_t::operator[](n);
-		}
-
-		constexpr stride_iterator& operator++() noexcept { base_t::operator++(); return *this; }
-		constexpr stride_iterator operator++(int) noexcept { auto tmp = *this; base_t::operator++(); return tmp; }
-		constexpr stride_iterator& operator--() noexcept { base_t::operator--(); return *this; }
-		constexpr stride_iterator operator--(int) noexcept { auto tmp = *this; base_t::operator--(); return tmp; }
-
-		constexpr stride_iterator& operator+=(difference_type n) noexcept { base_t::operator+=(n); return *this; }
-		constexpr stride_iterator& operator-=(difference_type n) noexcept { base_t::operator-=(n); return *this; }
-
-		constexpr stride_iterator operator+(difference_type n) const noexcept { return stride_iterator( (base_t::ptr + n * base_t::step), base_t::step ); }
-		constexpr stride_iterator operator-(difference_type n) const noexcept { return stride_iterator( (base_t::ptr - n * base_t::step), base_t::step ); }
+		constexpr stride_iterator operator+(difference_type n) const noexcept { return stride_iterator( (ptr + n * step), step ); }
+		constexpr stride_iterator operator-(difference_type n) const noexcept { return stride_iterator( (ptr - n * step), step ); }
 
 		constexpr difference_type operator-(const stride_iterator& other) const noexcept {
-			return (base_t::ptr - other.ptr) / base_t::step;
+			return (ptr - other.ptr) / step;
 		}
+
+	public:
+		constexpr auto operator<=>(const stride_iterator& o) const noexcept { return base_t::operator<=>(o); }
+		constexpr bool operator==(const stride_iterator& o) const noexcept { return base_t::operator==(o); }
 };
 
 template<typename T>
@@ -316,40 +367,90 @@ constexpr stride_iterator<T> operator+(
 	return it + n;
 }
 
-static_assert(std::random_access_iterator<stride_iterator<int>>);
+static_assert(std::random_access_iterator<stride_iterator<detail::tCont>>);
 
-template<typename T>
-struct ColProxy final : public std::ranges::view_interface<ColProxy<T>> {
+template<typename Cont>
+struct const_ColProxy : public std::ranges::view_interface<const_ColProxy<Cont>> {
 	public:
-		using value_type = T;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using reference = value_type&;
-		using const_reference = const value_type&;
-		using size_type = std::size_t;
+		using value_type = Cont::value_type;
+		using pointer = Cont::pointer;
+		using const_pointer = Cont::const_pointer;
+		using size_type = Cont::size_type;
+		using difference_type = Cont::difference_type;
+		using reference = Cont::reference;
+		using const_reference = Cont::const_reference;
 
 	public:
-		using iterator = stride_iterator<T>;
-		using const_iterator = stride_const_iterator<T>;
-		using reverse_iterator = std::reverse_iterator<iterator>;
-		using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+		using iterator = stride_const_iterator<Cont>;
+		using const_iterator = iterator;
+		using reverse_iterator = std::reverse_iterator<const_iterator>;
+		using const_reverse_iterator = reverse_iterator;
 
-	private:
+	protected:
 		pointer col_data = nullptr;
 		size_type rows = 0;
 		size_type stride = 0;
 
 	public:
-		constexpr ColProxy() noexcept = default;
-		constexpr ColProxy(pointer base, size_type r, size_type stride_) noexcept
+		constexpr const_ColProxy() noexcept = default;
+		constexpr const_ColProxy(pointer base, size_type r, size_type stride_) noexcept
 			: col_data(base), rows(r), stride(stride_) {
 		}
 
-		constexpr reference operator[](size_type r) {
+		constexpr const_reference operator[](size_type r) const {
 			return *(col_data + r * stride);
 		}
 
-		constexpr const_reference operator[](size_type r) const {
+
+	public:
+		constexpr const_iterator begin() const noexcept { return const_iterator(col_data, stride); }
+		constexpr const_iterator end() const noexcept { return const_iterator(col_data + rows * stride, stride); }
+		constexpr const_iterator cbegin() const noexcept { return const_iterator(begin()); }
+		constexpr const_iterator cend() const noexcept { return const_iterator(end()); }
+		constexpr const_reverse_iterator rbegin() noexcept { return const_reverse_iterator(end()); }
+		constexpr const_reverse_iterator rend() noexcept { return const_reverse_iterator(begin()); }
+		constexpr const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(cend()); }
+		constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(cbegin()); }
+
+	public:
+		constexpr size_type size() const noexcept { return rows; }
+		constexpr bool empty() const noexcept { return rows == 0; }
+		constexpr const_reference back() const { return *(col_data + (rows - 1) * stride); }
+		constexpr const_reference front() const { return *col_data; }
+};
+
+template<typename Cont>
+struct ColProxy final : public const_ColProxy<Cont> {
+	private:
+		using base_t = const_ColProxy<Cont>;
+
+	public:
+		using typename base_t::value_type;
+		using typename base_t::pointer;
+		using typename base_t::const_pointer;
+		using typename base_t::size_type;
+		using typename base_t::difference_type;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
+
+	public:
+		using iterator = stride_iterator<Cont>;
+		using const_iterator = stride_const_iterator<Cont>;
+		using reverse_iterator = std::reverse_iterator<iterator>;
+		using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+	private:
+		using base_t::col_data;
+		using base_t::rows;
+		using base_t::stride;
+
+	public:
+		constexpr ColProxy() noexcept = default;
+		constexpr ColProxy(pointer base, size_type r, size_type stride) noexcept
+			: base_t(base, r, stride) { // col_data(base), rows(r), stride(stride_) {
+		}
+
+		constexpr reference operator[](size_type r) {
 			return *(col_data + r * stride);
 		}
 
@@ -370,18 +471,29 @@ struct ColProxy final : public std::ranges::view_interface<ColProxy<T>> {
 		constexpr bool empty() const noexcept { return rows == 0; }
 		constexpr reference front() { return *col_data; }
 		constexpr const_reference front() const { return *col_data; }
-		constexpr reference back() { return ::operator[](rows - 1); }
-		constexpr const_reference back() const { return ::operator[](rows - 1); }
+		constexpr reference back() { return *(col_data + (rows - 1) * stride); }
+		constexpr const_reference back() const { return *(col_data + (rows - 1) * stride); }
 };
 
-template<typename T>
+template<typename T> concept derived_view_base_check = std::derived_from<T, std::ranges::view_base>;
+static_assert(std::ranges::view<ColProxy<detail::tCont>>);
+static_assert(std::ranges::range<ColProxy<detail::tCont>>);
+static_assert(std::movable<ColProxy<detail::tCont>>);
+static_assert(std::ranges::enable_view<ColProxy<detail::tCont>>);
+// static_assert(derived_view_base_check<ColProxy<int>>);
+
+template<typename Cont>
 struct matrix_const_default_iterator {
 	public:
-		using value_type = T;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using const_reference = const value_type&;
-		using difference_type = std::ptrdiff_t;
+		using value_type = Cont::value_type;
+		using pointer = Cont::pointer;
+		using const_pointer =  Cont::const_pointer;
+		using size_type = Cont::size_type;
+		using difference_type = Cont::difference_type;
+		using reference = Cont::reference;
+		using const_reference = Cont::const_reference;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::contiguous_iterator_tag;
 
@@ -416,25 +528,26 @@ struct matrix_const_default_iterator {
 };
 
 template<typename T>
-inline constexpr matrix_const_default_iterator<T> operator+(
+constexpr matrix_const_default_iterator<T> operator+(
 	std::ptrdiff_t n, const matrix_const_default_iterator<T>& it) noexcept {
 	return matrix_const_default_iterator<T>(it.ptr + n);
 }
 
-static_assert(std::contiguous_iterator<matrix_const_default_iterator<int>>);
+static_assert(std::contiguous_iterator<matrix_const_default_iterator<detail::tCont>>);
 
-template<typename T>
-struct matrix_default_iterator final : public matrix_const_default_iterator<T> {
+template<typename Cont>
+struct matrix_default_iterator final : public matrix_const_default_iterator<Cont> {
 	private:
-		using base_t = matrix_const_default_iterator<T>;
+		using base_t = matrix_const_default_iterator<Cont>;
 
 	public:
 		using typename base_t::value_type;
 		using typename base_t::pointer;
 		using typename base_t::const_pointer;
-		using typename base_t::const_reference;
+		using typename base_t::size_type;
 		using typename base_t::difference_type;
-		using reference = value_type&;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
 
 	public:
 		constexpr matrix_default_iterator() noexcept = default;
@@ -483,24 +596,34 @@ struct matrix_default_iterator final : public matrix_const_default_iterator<T> {
 };
 
 template<typename T>
-inline constexpr matrix_default_iterator<T> operator+(
+constexpr matrix_default_iterator<T> operator+(
 	std::ptrdiff_t n, const matrix_default_iterator<T>& it) noexcept {
 	return matrix_default_iterator<T>(it.ptr + n);
 }
 
-static_assert(std::contiguous_iterator<matrix_default_iterator<int>>);
+static_assert(std::contiguous_iterator<matrix_default_iterator<detail::tCont>>);
 
-
-template<typename T>
+template<typename Cont>
 struct matrix_const_row_iterator {
-	private:
-		using internal_pointer = T*;
 	public:
-		using value_type = RowProxy<const T>;
+		using internal_value_type = Cont::value_type;
+		using internal_pointer = Cont::pointer;
+		using internal_const_pointer = Cont::const_pointer;
+		using internal_size_type = Cont::size_type;
+		using internal_difference_type = Cont::difference_type;
+		using internal_reference = Cont::reference;
+		using internal_const_reference = Cont::const_reference;
+
+	public:
+		using value_type = const_RowProxy<Cont>;
 		using pointer = void;
+		using const_pointer = const pointer;
+		using size_type = internal_size_type;
+		using difference_type = internal_difference_type;
 		using reference = value_type;
-		using difference_type = std::ptrdiff_t;
-		using size_type = std::size_t;
+		using const_reference = const value_type;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::random_access_iterator_tag;
 
@@ -515,7 +638,7 @@ struct matrix_const_row_iterator {
 		constexpr value_type operator*() const { return value_type(ptr, cols); }
 		// constexpr pointer operator->() const { return ; }
 		constexpr value_type operator[](size_type n) const {
-			return value_type((ptr + static_cast<difference_type>(cols) * n), cols);
+			return value_type((ptr + cols * n), cols);
 		}
 	public:
 		constexpr matrix_const_row_iterator& operator++() noexcept { ptr += cols; return *this; }
@@ -534,28 +657,38 @@ struct matrix_const_row_iterator {
 };
 
 template <typename T>
-inline constexpr matrix_const_row_iterator<T> operator+(
+constexpr matrix_const_row_iterator<T> operator+(
 	std::ptrdiff_t n, const matrix_const_row_iterator<T>& o) {
 	return matrix_const_row_iterator<T>((o.ptr + static_cast<std::ptrdiff_t>(o.cols) * n), o.cols);
 }
 
-static_assert(std::random_access_iterator<matrix_const_row_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_const_row_iterator<detail::tCont>>);
 
-template<typename T>
-struct matrix_row_iterator final : public matrix_const_row_iterator<T> {
+template<typename Cont>
+struct matrix_row_iterator final : public matrix_const_row_iterator<Cont> {
 	private:
-		using base_t = matrix_const_row_iterator<T>;
-		using base_t::ptr;
-		using base_t::cols;
-		using pointer = decltype(ptr);
+		using base_t = matrix_const_row_iterator<Cont>;
+
 	public:
-		using value_type = RowProxy<T>;
-		using typename base_t::reference;
+		using typename base_t::internal_value_type;
+		using typename base_t::internal_pointer;
+
+	public:
+		using value_type = RowProxy<Cont>;
+		using typename base_t::pointer;
+		using typename base_t::const_pointer;
 		using typename base_t::difference_type;
 		using typename base_t::size_type;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
 
+	private:
+		using base_t::ptr;
+		using base_t::cols;
+
+	public:
 		constexpr matrix_row_iterator() noexcept = default;
-		constexpr matrix_row_iterator(pointer p, size_type cols) noexcept : base_t(p, cols) {}
+		constexpr matrix_row_iterator(internal_pointer p, size_type cols) noexcept : base_t(p, cols) {}
 		constexpr value_type operator*() const noexcept { return value_type(ptr, cols); }
 
 	public:
@@ -584,22 +717,34 @@ struct matrix_row_iterator final : public matrix_const_row_iterator<T> {
 };
 
 template <typename T>
-inline constexpr matrix_row_iterator<T> operator+(
+constexpr matrix_row_iterator<T> operator+(
 	std::ptrdiff_t n, const matrix_row_iterator<T>& o) {
 	return matrix_row_iterator<T>((o.ptr + static_cast<std::ptrdiff_t>(o.cols) * n), o.cols);
 }
 
-static_assert(std::random_access_iterator<matrix_row_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_row_iterator<detail::tCont>>);
 
-template<typename T>
+template<typename Cont>
 struct matrix_const_col_iterator {
 	public:
-		using internal_pointer = T*;
+		using internal_pointer = Cont::pointer;
+		using internal_const_pointer = Cont::const_pointer;
+		using internal_reference = Cont::reference;
+		using internal_value_type = Cont::value_type;
+		using internal_const_reference = Cont::const_reference;
+		using internal_difference_type = Cont::difference_type;
+		using internal_size_type = Cont::size_type;
+
 	public:
-		using value_type = ColProxy<const T>;
+		using value_type = const_ColProxy<Cont>;
+		using pointer = void;
+		using const_pointer = const pointer;
+		using size_type = internal_size_type;
+		using difference_type = internal_difference_type;
 		using reference = value_type;
-		using difference_type = std::ptrdiff_t;
-		using size_type = std::size_t;
+		using const_reference = const value_type;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::random_access_iterator_tag;
 
@@ -647,18 +792,25 @@ inline constexpr matrix_const_col_iterator<T> operator+(
 	return matrix_const_col_iterator(o.ptr + n, o.rows(), o.stride);
 }
 
-static_assert(std::random_access_iterator<matrix_const_col_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_const_col_iterator<detail::tCont>>);
 
-template<typename T>
-struct matrix_col_iterator final : public matrix_const_col_iterator<T> {
+template<typename Cont>
+struct matrix_col_iterator final : public matrix_const_col_iterator<Cont> {
 	private:
-		using base_t = matrix_const_col_iterator<T>;
+		using base_t = matrix_const_col_iterator<Cont>;
+
+	public:
+		using typename base_t::internal_value_type;
+		using typename base_t::internal_pointer;
 		
 	public:
+		using value_type = ColProxy<Cont>;
+		using typename base_t::pointer;
+		using typename base_t::const_pointer;
 		using typename base_t::difference_type;
 		using typename base_t::size_type;
-		using value_type = typename ColProxy<T>;
-		using typename base_t::internal_pointer;
+		using typename base_t::reference;
+		using typename base_t::const_reference;
 
 	private:
 		using base_t::ptr;
@@ -679,34 +831,14 @@ struct matrix_col_iterator final : public matrix_const_col_iterator<T> {
 		}
 
 	public:
-		constexpr matrix_col_iterator& operator++() noexcept {
-			base_t::operator++();
-			return *this;
-		}
-		constexpr matrix_col_iterator operator++(int) noexcept {
-			auto tmp = *this;
-			base_t::operator++();
-			return tmp;
-		}
+		constexpr matrix_col_iterator& operator++() noexcept { ++ptr; return *this;	}
+		constexpr matrix_col_iterator operator++(int) noexcept { auto tmp = *this; ++ptr; return tmp;	}
 
-		constexpr matrix_col_iterator& operator--() noexcept {
-			base_t::operator--();
-			return *this;
-		}
-		constexpr matrix_col_iterator operator--(int) noexcept {
-			auto tmp = *this;
-			base_t::operator--();
-			return tmp;
-		}
+		constexpr matrix_col_iterator& operator--() noexcept { --ptr;	return *this;	}
+		constexpr matrix_col_iterator operator--(int) noexcept { auto tmp = *this; --ptr; return tmp;	}
 
-		constexpr matrix_col_iterator& operator+=(difference_type n) noexcept {
-			base_t::operator+=(n);
-			return *this;
-		}
-		constexpr matrix_col_iterator& operator-=(difference_type n) noexcept {
-			base_t::operator-=(n);
-			return *this;
-		}
+		constexpr matrix_col_iterator& operator+=(difference_type n) noexcept { ptr += n;	return *this; }
+		constexpr matrix_col_iterator& operator-=(difference_type n) noexcept { ptr -= n; return *this; }
 
 		constexpr matrix_col_iterator operator+(difference_type n) const noexcept {
 			return matrix_col_iterator(ptr + n, rows, stride);
@@ -714,15 +846,13 @@ struct matrix_col_iterator final : public matrix_const_col_iterator<T> {
 		constexpr matrix_col_iterator operator-(difference_type n) const noexcept {
 			return matrix_col_iterator(ptr - n, rows, stride);
 		}
-
 		constexpr difference_type operator-(const matrix_col_iterator& o) const noexcept {
-			return base_t::operator-(o);
+			return ptr - o.ptr;
 		}
 
 	public:
 		constexpr bool operator==(const matrix_col_iterator& o) const noexcept { return ptr == o.ptr; }
 		constexpr auto operator<=>(const matrix_col_iterator& o) const noexcept { return ptr <=> o.ptr; }
-	
 };
 
 template <typename T>
@@ -730,18 +860,20 @@ inline constexpr matrix_col_iterator<T> operator+(std::ptrdiff_t n, const matrix
 	return matrix_col_iterator(o.ptr + n, o.rows, o.stride);
 }
 
-static_assert(std::random_access_iterator<matrix_col_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_col_iterator<detail::tCont>>);
 
-template<typename T>
+template<typename Cont>
 struct matrix_const_diagonal_iterator {
 	public:
-		using value_type = T;
-		using pointer = value_type*;
-		using const_pointer = const value_type*;
-		using reference = value_type&;
-		using const_reference = const value_type&;
-		using difference_type = std::ptrdiff_t;
-		using size_type = std::size_t;
+		using value_type = typename Cont::value_type;
+		using pointer = typename Cont::pointer;
+		using const_pointer = typename Cont::const_pointer;
+		using size_type = typename Cont::size_type;
+		using difference_type = typename Cont::difference_type;
+		using reference = typename Cont::reference;
+		using const_reference = typename Cont::const_reference;
+
+	public:
 		using iterator_category = std::random_access_iterator_tag;
 		using iterator_concept = std::random_access_iterator_tag;
 
@@ -778,25 +910,25 @@ struct matrix_const_diagonal_iterator {
 };
 
 template<typename T>
-inline constexpr matrix_const_diagonal_iterator<T> operator+(std::ptrdiff_t n, const matrix_const_diagonal_iterator<T>& o) {
+constexpr matrix_const_diagonal_iterator<T> operator+(std::ptrdiff_t n, const matrix_const_diagonal_iterator<T>& o) {
 	return matrix_const_diagonal_iterator<T>(o.offset * n + o.ptr, o.offset);
 }
 
-static_assert(std::random_access_iterator<matrix_const_diagonal_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_const_diagonal_iterator<detail::tCont>>);
 
-template<typename T>
-struct matrix_diagonal_iterator final : public matrix_const_diagonal_iterator<T> {
+template<typename Cont>
+struct matrix_diagonal_iterator final : public matrix_const_diagonal_iterator<Cont> {
 	private:
-		using base_t = typename matrix_const_diagonal_iterator<T>;
+		using base_t = typename matrix_const_diagonal_iterator<Cont>;
 
 	public:
 		using typename base_t::value_type;
-		using typename base_t::size_type;
 		using typename base_t::pointer;
 		using typename base_t::const_pointer;
+		using typename base_t::size_type;
+		using typename base_t::difference_type;
 		using typename base_t::reference;
 		using typename base_t::const_reference;
-		using typename base_t::difference_type;
 
 	private:
 		using base_t::ptr;
@@ -831,73 +963,58 @@ struct matrix_diagonal_iterator final : public matrix_const_diagonal_iterator<T>
 };
 
 template<typename T>
-inline constexpr matrix_diagonal_iterator<T> operator+(std::ptrdiff_t n, const matrix_diagonal_iterator<T>& o) {
+constexpr matrix_diagonal_iterator<T> operator+(std::ptrdiff_t n, const matrix_diagonal_iterator<T>& o) {
 	return matrix_diagonal_iterator<T>(o.offset * n + o.ptr, o.offset);
 }
 
-static_assert(std::random_access_iterator<matrix_diagonal_iterator<int>>);
+static_assert(std::random_access_iterator<matrix_diagonal_iterator<detail::tCont>>);
 
 template<typename T> constexpr auto maybe_null(T ptr) { return ptr ? std::addressof(*ptr) : nullptr; }
 
+template<typename allocator_type, typename value_type> using rebound_allocator = typename std::allocator_traits<allocator_type>::template rebind_alloc<value_type>;
 
-static_assert(std::ranges::input_range<RowProxy<int>>);
-static_assert(std::ranges::input_range<ColProxy<int>>);
-static_assert(std::ranges::input_range<RowProxy<const int>>);
-static_assert(std::ranges::input_range<ColProxy<const int>>);
-static_assert(std::ranges::input_range<std::add_const_t<RowProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_const_t<ColProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_const_t<RowProxy<const int>>>);
-static_assert(std::ranges::input_range<std::add_const_t<ColProxy<const int>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<RowProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<ColProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<RowProxy<const int>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<ColProxy<const int>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<RowProxy<int>>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<ColProxy<int>>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<RowProxy<const int>>>>);
-static_assert(std::ranges::input_range<std::add_lvalue_reference_t<std::add_const_t<ColProxy<const int>>>>);
-static_assert(std::ranges::input_range<std::add_rvalue_reference_t<RowProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_rvalue_reference_t<ColProxy<int>>>);
-static_assert(std::ranges::input_range<std::add_rvalue_reference_t<RowProxy<const int>>>);
-static_assert(std::ranges::input_range<std::add_rvalue_reference_t<ColProxy<const int>>>);
-
-
-template<typename T, typename Alloc = std::allocator<T>>
+template<detail::object T, typename Alloc = std::allocator<T>>
 struct Matrix {
 	public:
-		using value_type = T;
-		using allocator_type = typename std::allocator_traits<Alloc>::allocator_type;
-		using pointer = typename std::allocator_traits<Alloc>::pointer;
-		using const_pointer = typename std::allocator_traits<Alloc>::const_pointer;
-		using reference = T&;
-		using const_reference = const T&;
-		using size_type = typename std::allocator_traits<Alloc>::size_type;
-		using difference_type = typename std::allocator_traits<Alloc>::difference_type;
+		using allocator_type = Alloc;
+		using allocator_traits = std::allocator_traits<rebound_allocator<Alloc, T>>;
 
 	public:
-		using col_proxy = ColProxy<value_type>;
-		using const_col_proxy = ColProxy<const value_type>;
-		using row_proxy = RowProxy<value_type>;
-		using const_row_proxy = RowProxy<const value_type>;
+		using value_type = typename allocator_traits::value_type;
+		using pointer = typename allocator_traits::pointer;
+		using const_pointer = typename allocator_traits::const_pointer;
+		using size_type = typename allocator_traits::size_type;
+		using difference_type = typename allocator_traits::difference_type;
+		using reference = value_type&;
+		using const_reference = const value_type&;
+
+	private:
+		using base = typename Matrix<value_type, allocator_type>;
 
 	public:
-		using iterator = matrix_default_iterator<value_type>;
-		using const_iterator = matrix_const_default_iterator<value_type>;
+		using col_proxy = ColProxy<base>;
+		using const_col_proxy = const_ColProxy<base>;
+		using row_proxy = RowProxy<base>;
+		using const_row_proxy = const_RowProxy<base>;
+
+	public:
+		using iterator = matrix_default_iterator<base>;
+		using const_iterator = matrix_const_default_iterator<base>;
 		using reverse_iterator = std::reverse_iterator<iterator>;
 		using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
-		using row_const_iterator = matrix_const_row_iterator<value_type>;
+		using row_iterator = matrix_row_iterator<base>;
+		using row_const_iterator = matrix_const_row_iterator<base>;
 		using row_const_reverse_iterator = std::reverse_iterator<row_const_iterator>;
-		using row_iterator = matrix_row_iterator<value_type>;
 		using row_reverse_iterator = std::reverse_iterator<row_iterator>;
 
-		using col_const_iterator = matrix_const_col_iterator<value_type>;
+		using col_iterator = matrix_col_iterator<base>;
+		using col_const_iterator = matrix_const_col_iterator<base>;
 		using col_const_reverse_iterator = std::reverse_iterator<col_const_iterator>;
-		using col_iterator = matrix_col_iterator<value_type>;
 		using col_reverse_iterator = std::reverse_iterator<col_iterator>;
 
-		using diagonal_iterator = matrix_diagonal_iterator<value_type>;
-		using diagonal_const_iterator = matrix_const_diagonal_iterator<value_type>;
+		using diagonal_iterator = matrix_diagonal_iterator<base>;
+		using diagonal_const_iterator = matrix_const_diagonal_iterator<base>;
 		using diagonal_reverse_iterator = std::reverse_iterator<diagonal_iterator>;
 		using diagonal_const_reverse_iterator = std::reverse_iterator<diagonal_const_iterator>;
 
@@ -912,9 +1029,9 @@ struct Matrix {
 				return;
 			}
 			const size_type n = _rows * _cols;
-			_data = std::allocator_traits<Alloc>::allocate(_allocator, n);
+			_data = std::allocator_traits<allocator_type>::allocate(_allocator, n);
 			for (size_type i = 0; i < n; ++i) {
-				std::allocator_traits<Alloc>::construct(_allocator, std::addressof(_data[i]));
+				std::allocator_traits<allocator_type>::construct(_allocator, std::addressof(_data[i]));
 			}
 		}
 
@@ -923,9 +1040,9 @@ struct Matrix {
 			if (_data) {
 				const size_type n = _rows * _cols;
 				for (size_type i = 0; i < n; ++i) {
-					std::allocator_traits<Alloc>::destroy(_allocator, std::addressof(_data[i]));
+					std::allocator_traits<allocator_type>::destroy(_allocator, std::addressof(_data[i]));
 				}
-				std::allocator_traits<Alloc>::deallocate(_allocator, _data, n);
+				std::allocator_traits<allocator_type>::deallocate(_allocator, _data, n);
 				_data = nullptr;
 			}
 		}
@@ -935,9 +1052,9 @@ struct Matrix {
 			: _rows(other._rows), _cols(other._cols) {
 			if (other._data) {
 				const size_type n = _rows * _cols;
-				_data = std::allocator_traits<Alloc>::allocate(_allocator, n);
+				_data = std::allocator_traits<allocator_type>::allocate(_allocator, n);
 				for (size_type i = 0; i < n; ++i) {
-					std::allocator_traits<Alloc>::construct(_allocator, std::addressof(_data[i]), other._data[i]);
+					std::allocator_traits<allocator_type>::construct(_allocator, std::addressof(_data[i]), other._data[i]);
 				}
 			} else {
 				_data = nullptr;
@@ -992,11 +1109,11 @@ struct Matrix {
 			auto z = static_cast<size_type>(x - _data);
 			return (z / _cols);
 		}
-		constexpr RowProxy<const value_type> get_elem_row(const value_type& elem) const noexcept {
+		constexpr const_row_proxy get_elem_row(const value_type& elem) const noexcept {
 			return row(get_elem_row_index(elem));
 		}
 
-		constexpr RowProxy<value_type> get_elem_row(const value_type& elem) noexcept {
+		constexpr row_proxy get_elem_row(const value_type& elem) noexcept {
 			return row(get_elem_row_index(elem));
 		}
 
@@ -1007,11 +1124,11 @@ struct Matrix {
 			return (z % _cols);
 		}
 
-		constexpr ColProxy<const value_type> get_elem_col(const value_type& elem) const noexcept {
+		constexpr const_col_proxy get_elem_col(const value_type& elem) const noexcept {
 			return col(get_elem_col_index(elem));
 		}
 
-		constexpr ColProxy<value_type> get_elem_col(const value_type& elem) noexcept {
+		constexpr col_proxy get_elem_col(const value_type& elem) noexcept {
 			return col(get_elem_col_index(elem));
 		}
 
@@ -1224,7 +1341,7 @@ struct Matrix {
 
 		[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crbegin() const noexcept {
 			if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
-			return col_rbegin();
+			return diagonal_rbegin();
 		}
 
 		[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crend() const noexcept {
@@ -1234,22 +1351,22 @@ struct Matrix {
 
 
 	public:
-		[[nodiscard]] constexpr ColProxy<value_type> col(size_type j) {
+		[[nodiscard]] constexpr col_proxy col(size_type j) {
 			// if (j >= _cols) throw std::out_of_range("Column index out of range");
-			return ColProxy<value_type>{_data + j, _rows, _cols};
+			return col_proxy{_data + j, _rows, _cols};
 		}
 
-		[[nodiscard]] constexpr ColProxy<const value_type> col(size_type j) const {
+		[[nodiscard]] constexpr const_col_proxy col(size_type j) const {
 			// if (j >= _cols) throw std::out_of_range("Column index out of range");
-			return ColProxy<const value_type>{_data + j, _rows, _cols};
+			return const_col_proxy{_data + j, _rows, _cols};
 		}
 
-		[[nodiscard]] constexpr RowProxy<value_type> row(size_type j) {
-			return RowProxy<value_type>(_data + j * _cols, _cols);
+		[[nodiscard]] constexpr row_proxy row(size_type j) {
+			return row_proxy(_data + j * _cols, _cols);
 		}
 
-		[[nodiscard]] constexpr RowProxy<const value_type> row(size_type j) const {
-			return RowProxy<const value_type>(_data + j * _cols, _cols);
+		[[nodiscard]] constexpr const_row_proxy row(size_type j) const {
+			return const_row_proxy(_data + j * _cols, _cols);
 		}
 
 	public:
@@ -1317,14 +1434,14 @@ struct Matrix {
 		}
 		
 	public:
-		constexpr RowProxy<value_type> operator[](size_type r) noexcept {
+		constexpr row_proxy operator[](size_type r) noexcept {
 			// if (r >= _rows) throw std::out_of_range("Row index out of range");
-			return RowProxy<value_type>{ _data + r * _cols, _cols };
+			return row_proxy{ _data + r * _cols, _cols };
 		}
 
-		constexpr const RowProxy<const value_type> operator[](size_type r) const noexcept {
+		constexpr const const_row_proxy operator[](size_type r) const noexcept {
 			// if (r >= _rows) throw std::out_of_range("Row index out of range");
-			return RowProxy<const value_type>{ _data + r * _cols, _cols };
+			return const_row_proxy{ _data + r * _cols, _cols };
 		}
 
 		constexpr reference at(size_type r, size_type c) {
@@ -1359,14 +1476,14 @@ struct Matrix {
 			os << std::endl;
 		}
 		
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_row_as_vector(size_type x) const {
 			auto&& it = *this;
 			auto r = it[x];
 			return std::vector<value_type, AllocR>(r.begin(), r.end());
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_row_as_matrix_row(size_type x) const {
 			auto&& it = *this;
 			auto r = it[x];
@@ -1377,7 +1494,7 @@ struct Matrix {
 			return result;
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_row_as_matrix_col(size_type x) const {
 			auto&& it = *this;
 			auto r = it[x];
@@ -1388,14 +1505,14 @@ struct Matrix {
 			return result;
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_col_as_vector(size_type x) const {
 			auto&& it = *this;
 			auto c = it.col(x);
 			return std::vector<value_type, AllocR>(c.begin(), c.end());
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_col_as_matrix_row(size_type x) const {
 			auto&& it = *this;
 			auto c = it.col(x);
@@ -1406,7 +1523,7 @@ struct Matrix {
 			return result;
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_col_as_matrix_col(size_type x) const {
 			auto&& it = *this;
 			auto c = it.col(x);
@@ -1417,7 +1534,7 @@ struct Matrix {
 			return result;
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_submatrix(
 			size_type from_x,
 			size_type from_y,
@@ -1448,10 +1565,10 @@ struct Matrix {
 			return result;
 		}
 
-		template<typename AllocR = Alloc>
+		template<typename AllocR = allocator_type>
 		auto get_submatrix(const value_type& from_elem, const value_type& to_elem) const {
-			auto&& [from_x, from_y] = get_index(from_elem);
-			auto&& [to_x, to_y] = get_index(to_elem);
+			auto&& [from_x, from_y] = get_indices(from_elem);
+			auto&& [to_x, to_y] = get_indices(to_elem);
 			return get_submatrix<AllocR>(from_x, from_y, to_x, to_y);
 		}
 
@@ -1466,8 +1583,8 @@ struct Matrix {
 				throw std::runtime_error("set_submatrix: submatrix does not fit in target matrix");
 			}
 #else
-			static_assert(to_x >= it.rows() || to_y >= it.cols());
-			static_assert(to_x + A.rows() > it.rows() || to_y + A.cols() > it.cols());
+		//	static_assert(to_x >= it.rows() || to_y >= it.cols());
+		//	static_assert(to_x + A.rows() > it.rows() || to_y + A.cols() > it.cols());
 #endif
 			
 			for (size_type i = 0; i < A.rows(); ++i) {
@@ -1489,124 +1606,60 @@ struct Matrix {
 			return result;
 		}
 
-	private:
-
-		template<typename First_, typename Second_>
-		auto mult(
-			const Matrix<First_>& A,
-			const Matrix<Second_>& B
-		) const -> Matrix<std::common_type_t<First_, Second_>> {
-			using ResultType = std::common_type_t<First_, Second_>;
-			auto C = Matrix<ResultType>(A.rows(), B.cols());
-
-			using size_type = typename Matrix<ResultType>::size_type;
-
-			const auto M = A.rows(); // C.rows()
-			const auto N = B.cols(); // C.cols()
-			const auto K = A.cols();
-
-			for (size_type i = 0; i < N; ++i) {
-				auto&& c = C.col(i);
-				for (size_type j = 0; j < K; ++j) {
-					auto&& a_col = A.col(j);
-					auto&& b_val = B[j][i];
-					for (size_type k = 0; k < M; ++k) {
-						c[k] += a_col[k] * b_val;
-					}
-				}
-			}
-
-			return C;
-		}
-
-		template<typename First_, typename Second_>
-		auto dummy_mult(
-			const Matrix<First_>& A,
-			const Matrix<Second_>& B
-		) const -> Matrix<std::common_type_t<First_, Second_>> {
-			if (A.cols() != B.rows()) {
-				throw std::runtime_error("Matrix dimensions do not match for multiplication");
-			}
-			using ResultType = std::common_type_t<First_, Second_>;
-			auto result = Matrix<ResultType>(A.rows(), B.cols());
-
-			for (size_type i = 0; i < A.rows(); ++i) {
-				for (size_type j = 0; j < B.cols(); ++j) {
-					ResultType sum = ResultType{};
-					for (size_type k = 0; k < A.cols(); ++k) {
-						sum += A[i][k] * B[k][j];
-					}
-					result[i][j] = sum;
-				}
-			}
-
-			return result;
-		}
-
 	public:
 
 		template<typename U>
-		auto operator*(const Matrix<U>& other) const -> Matrix<std::common_type_t<T, U>> {
-			auto&& it = *this;
-			if (it.cols() != other.rows()) {
-				throw std::runtime_error("Matrix dimensions do not match for multiplication");
-			}
-
-			return mult(it, other);
+		constexpr auto operator*(const Matrix<U>& other) const noexcept
+			-> Matrix<std::common_type_t<value_type, U>>  {
+			return mult(*this, other);
 		}
 
-		template<typename U>
-		Matrix& operator*=(const Matrix<U>& other) {
+		template<typename U, typename Alloc = std::allocator<std::common_type_t<value_type, U>>>
+		constexpr Matrix& operator*=(const Matrix<U>& other) {
 			auto&& it = *this;
-			if (it.cols() != other.rows()) {
+			if (cols() != other.rows()) {
 				throw std::runtime_error("Matrix dimensions do not match for multiplication");
 			}
-
 			using ResultType = std::common_type_t<value_type, U>;
-			it = std::move(mult(it, other));
-
-			return *this;
+			it = mult<value_type, U, ResultType, Alloc>(*this, other);
+			return it;
 		}
 
 		// Scalar multiplication (matrix * scalar)
 		template<typename U>
-		auto operator*(U scalar) const -> Matrix<std::common_type_t<T, U>> {
+		auto operator*(U scalar) const noexcept
+			-> Matrix<std::common_type_t<T, U>> {
+			auto&& it = *this;
 			using ResultType = std::common_type_t<T, U>;
-			Matrix<ResultType> result(_rows, _cols);
+			auto result = it;
 
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					result[i][j] = (*this)[i][j] * scalar;
-				}
-			}
+			std::ranges::for_each(result, [&scalar](auto&& it) {
+				it *= scalar;
+			});
 
 			return result;
 		}
 
 		template<typename U>
-		requires std::is_arithmetic_v<U>
-		Matrix& operator*=(const U& scalar) {
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					(*this)[i][j] *= scalar;
-				}
-			}
+		constexpr Matrix& operator*=(const U& scalar) {
+			auto&& it = *this;
+			std::ranges::for_each(it, [&scalar](auto&& it) {
+				it *= scalar;
+			});
 			return *this;
 		}
 
 		template<typename U>
 		auto operator/(U scalar) const -> Matrix<std::common_type_t<T, U>> {
 			using ResultType = std::common_type_t<T, U>;
-			if (scalar == U{0}) {
-				throw std::runtime_error("Division by zero");
-			}
-		
-			Matrix<ResultType> result(_rows, _cols);
-		
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					result[i][j] = (*this)[i][j] / scalar;
-				}
+			if (scalar == U{0}) { throw std::runtime_error("Division by zero"); }
+			auto result = Matrix<ResultType>(_rows, _cols);
+			auto rb = result.begin();
+			auto re = result.end();
+			auto ib = begin();
+
+			for (; rb != re; ++rb, ++ib) {
+				*rb = *ib / scalar;
 			}
 		
 			return result;
@@ -1614,15 +1667,11 @@ struct Matrix {
 	
 		template<typename U>
 		Matrix& operator/=(U scalar) {
-			if (scalar == U{0}) {
-				throw std::runtime_error("Division by zero");
-			}
-		
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					(*this)[i][j] /= scalar;
-				}
-			}
+			if (scalar == U{0}) { throw std::runtime_error("Division by zero"); }
+			auto&& it_ = *this;
+			std::ranges::for_each(it_, [&scalar](auto&& it) {
+				it /= scalar;
+			});
 			return *this;
 		}
 
@@ -1631,17 +1680,20 @@ struct Matrix {
 			if (_rows != other.rows() || _cols != other.cols()) {
 				throw std::runtime_error("Matrix dimensions do not match for addition");
 			}
-
+			auto&& it = *this;
+			
 			using ResultType = std::common_type_t<T, U>;
-			Matrix<ResultType> result(_rows, _cols);
+			auto result = Matrix<ResultType>(_rows, _cols);
 
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					result[i][j] = static_cast<ResultType>((*this)[i][j]) + 
-								  static_cast<ResultType>(other[i][j]);
-				}
+			auto rb = result.begin();
+			auto re = result.end();
+			auto ib = it.cbegin();
+			auto ob = other.cbegin();
+
+			for (; rb != re; ++rb, ++ib, ++ob) {
+				*rb = (*ib) + (*ob);
 			}
-
+			
 			return result;
 		}
 
@@ -1651,14 +1703,18 @@ struct Matrix {
 				throw std::runtime_error("Matrix dimensions do not match for subtraction");
 			}
 
-			using ResultType = std::common_type_t<T, U>;
-			Matrix<ResultType> result(_rows, _cols);
+			auto&& it = *this;
 
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					result[i][j] = static_cast<ResultType>((*this)[i][j]) - 
-								  static_cast<ResultType>(other[i][j]);
-				}
+			using ResultType = std::common_type_t<T, U>;
+			auto result = Matrix<ResultType>(_rows, _cols);
+
+			auto rb = result.begin();
+			auto re = result.end();
+			auto ib = it.cbegin();
+			auto ob = other.cbegin();
+
+			for (; rb != re; ++rb, ++ib, ++ob) {
+				*rb = (*ib) - (*ob);
 			}
 
 			return result;
@@ -1668,11 +1724,12 @@ struct Matrix {
 
 		Matrix operator-() const {
 			Matrix result(_rows, _cols);
+			auto rb = result.begin();
+			auto re = result.end();
+			auto ib = cbegin();
 		
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					result[i][j] = -(*this)[i][j];
-				}
+			for (; rb != re; ++rb, ++ib) {
+				*rb = -(*ib);
 			}
 		
 			return result;
@@ -1683,10 +1740,11 @@ struct Matrix {
 				throw std::runtime_error("Matrix dimensions do not match for addition");
 			}
 
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					(*this)[i][j] += other[i][j];
-				}
+			auto ib = begin();
+			auto ie = end();
+			auto ob = other.cbegin();
+			for (; ib != ie; ++ib, ++ob) {
+				*ib += *ob;
 			}
 
 			return *this;
@@ -1697,10 +1755,11 @@ struct Matrix {
 				throw std::runtime_error("Matrix dimensions do not match for subtraction");
 			}
 
-			for (size_type i = 0; i < _rows; ++i) {
-				for (size_type j = 0; j < _cols; ++j) {
-					(*this)[i][j] -= other[i][j];
-				}
+			auto ib = begin();
+			auto ie = end();
+			auto ob = other.cbegin();
+			for (; ib != ie; ++ib, ++ob) {
+				*ib -= *ob;
 			}
 
 			return *this;
@@ -1709,18 +1768,19 @@ struct Matrix {
 	private:
 		size_type _rows = 0;
 		size_type _cols = 0;
-		Alloc _allocator = Alloc();
+		allocator_type _allocator = allocator_type();
 		pointer _data = nullptr;
 };
 
-template<typename T, typename U, typename Alloc>
-auto operator*(U scalar, const Matrix<T, Alloc>& matrix) -> Matrix<std::common_type_t<T, U>> {
+template<typename T, typename U, typename allocator_type>
+auto operator*(U scalar, const Matrix<T, allocator_type>& matrix) -> Matrix<std::common_type_t<T, U>> {
 	return matrix * scalar;
 }
 
+
 #if 0
-template<typename T, typename Alloc>
-Matrix<T> operator/(const Matrix<T, Alloc>& B, const Matrix<T, Alloc>& A) {
+template<typename T, typename allocator_type>
+Matrix<T> operator/(const Matrix<T, allocator_type>& B, const Matrix<T, allocator_type>& A) {
 	if (A.rows() != A.cols()) {
 		throw std::runtime_error("Matrix A must be square for division");
 	}
@@ -1733,6 +1793,7 @@ Matrix<T> operator/(const Matrix<T, Alloc>& B, const Matrix<T, Alloc>& A) {
 }
 #endif
 
+#if 0
 constexpr auto to_Matrix_col(std::ranges::range auto&& range) {
 	using value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(range)>>;
 	auto result = Matrix<value_type>(std::ranges::size(range), 1);
@@ -1747,16 +1808,77 @@ constexpr auto to_Matrix_row(std::ranges::range auto&& range) {
 	return result;
 }
 
-template<typename T, typename Alloc = std::allocator<T>>
-struct OneColMatrix : public Matrix<T, Alloc> {
-	using base_t = typename Matrix<T, Alloc>;
+template<typename T, typename allocator_type = std::allocator<T>>
+struct OneColMatrix : public Matrix<T, allocator_type> {
+	using base_t = typename Matrix<T, allocator_type>;
 	OneColMatrix(std::ranges::range auto&& range) : base_t(to_Matrix_col(range)) {};
 };
 
-template<typename T, typename Alloc = std::allocator<T>>
-struct OneRowMatrix : public Matrix<T, Alloc> {
-	using base_t = typename Matrix<T, Alloc>;
+template<typename T, typename allocator_type = std::allocator<T>>
+struct OneRowMatrix : public Matrix<T, allocator_type> {
+	using base_t = typename Matrix<T, allocator_type>;
 	OneRowMatrix(std::ranges::range auto&& range) : base_t(to_Matrix_row(range)) {};
 };
+#endif
+
+template<typename T, typename U>
+constexpr auto dummy_mult(const Matrix<T>& A, const Matrix<U>& B )
+	-> Matrix<std::common_type_t<T, U>>
+{
+	using ResultType = std::common_type_t<T, U>;
+	if (A.cols() != B.rows()) {
+		throw std::runtime_error("Matrix dimensions do not match for multiplication");
+	}
+	using size_type = size_t;
+	auto result = Matrix<ResultType>(A.rows(), B.cols());
+
+	for (size_type i = 0; i < A.rows(); ++i) {
+		for (size_type j = 0; j < B.cols(); ++j) {
+			ResultType sum = ResultType{};
+			for (size_type k = 0; k < A.cols(); ++k) {
+				sum += A[i][k] * B[k][j];
+			}
+			result[i][j] = sum;
+		}
+	}
+
+	return result;
+}
+
+template<typename T, typename U, typename W>
+constexpr void mult_(const Matrix<T>& A, const Matrix<U>& B, Matrix<W>& C) noexcept {
+	using size_type = typename Matrix<T>::size_type;
+	const auto M = A.rows(); // C.rows()
+	const auto N = B.cols(); // C.cols()
+	const auto K = A.cols();
+
+	for (size_type i = 0; i < N; ++i) {
+		auto&& c = C.col(i);
+		auto&& Bci = B.col(i);
+		for (size_type j = 0; j < K; ++j) {
+			auto&& a_col = A.col(j);
+			auto&& b_val = Bci[j];
+			for (size_type k = 0; k < M; ++k) {
+				c[k] += a_col[k] * b_val;
+			}
+		}
+	}
+}
+
+template<
+	typename T,
+	typename U,
+	typename W = typename std::common_type_t<T, U>,
+	typename Alloc = std::allocator<W>
+>
+constexpr auto mult(const Matrix<T>& A, const Matrix<U>& B) noexcept
+	-> Matrix<W, Alloc>
+{
+	const auto M = A.rows();
+	const auto N = B.cols();
+	auto C = Matrix<W, Alloc>(M, N);
+	mult_<T, U, W>(A, B, C);
+	return C;
+}
 
 #endif

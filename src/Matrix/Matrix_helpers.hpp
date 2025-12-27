@@ -449,7 +449,7 @@ namespace helpers {
 	}
 
 	template<typename T>
-	constexpr auto pq_c(const ColProxy<T>& pcol, const ColProxy<T>& qcol) {
+	constexpr auto pq_c(auto&& pcol, auto&& qcol) {
 		constexpr auto zero = static_cast<T>(0);
 		std::tuple<T, T, T> res(zero, zero, zero);
 		auto& [pq, pp, qq] = res;
@@ -501,7 +501,7 @@ namespace helpers {
 					auto Aqc = A_c.col(qcol);
 					auto Vqc = V.col(qcol);
 
-					auto [a_pq, a_pp, a_qq] = pq_c(Apc, Aqc);
+					auto [a_pq, a_pp, a_qq] = pq_c<value_type>(Apc, Aqc);
 					auto abs_a_pq = std::abs(a_pq);
 
 
@@ -519,16 +519,16 @@ namespace helpers {
 						auto& ap = Apc[i];
 						auto& aq = Aqc[i];
 
-						Apc[i] = c * ap - s * aq;
-						Aqc[i] = s * ap + c * aq;
+						ap = c * ap - s * aq;
+						aq = s * ap + c * aq;
 					}
 
 					for (size_type i = 0; i < n; ++i) {
 						auto& vp = Vpc[i];
 						auto& vq = Vqc[i];
 
-						Vpc[i] = c * vp - s * vq;
-						Vqc[i] = s * vp + c * vq;
+						vp = c * vp - s * vq;
+						vq = s * vp + c * vq;
 					}
 				}
 			}
@@ -542,38 +542,52 @@ namespace helpers {
 
 		// --- 6) Build U (m x p) as normalized columns of A_c ---
 #if 1
+#if 0
 		for (size_type j = 0; j < p; ++j) {
 			auto s = sigma[j];
+			auto Ucj = U.col(j);
+			auto Acj = A_c.col(j);
 			if (s > eps) {
-				for (size_type i = 0; i < m; ++i) {
-					U[i][j] = A_c[i][j] / s;
-				}
+				for (size_type i = 0; i < m; ++i) {	U[i][j] = A_c[i][j] / s; }
 			}	else {
-				for (size_type i = 0; i < m; ++i) {
-					U[i][j] = zero;
-				}
+				for (size_type i = 0; i < m; ++i) {	U[i][j] = zero;	}
 				// put 1 on diagonal position if exists
-				if (j < m) {
-					U[j][j] = one;
-				}
+				if (j < m) {	U[j][j] = one; }
 			}
 		}
 #else
-		auto U = Matrix<complex_t>(m, p);
-		std::ranges::for_each();
+		for (size_type j = 0; j < p; ++j) {
+			auto s = sigma[j];
+			auto Ucj = U.col(j);
+			auto Acj = A_c.col(j);
+			for (size_type i = 0; i < m; ++i) {
+				Ucj[i] = Acj[i] / s;
+			}
+		}
 #endif
+#endif
+
 		// --- 7) Build Sigma matrix (p x p diagonal, real) ---
+#if 0
 		for (size_type i = 0; i < p; ++i) {
 			for (size_type j = 0; j < p; ++j) {
 				Sigma[i][j] = zero;
 			}
 			Sigma[i][i] = sigma[i];
 		}
+#else
+		std::ranges::for_each(Sigma.diagonal_range(), [sb = sigma.begin()](auto&& it) mutable {
+			it = *sb;
+			++sb;
+		});
+#endif
 
 		// --- 8) Build Vh (p x n) = first p rows of V^H ---
 		for (size_type i = 0; i < p; ++i) {
+			auto Vhri = Vh.row(i);
+			auto Vci = V.col(i);
 			for (size_type j = 0; j < n; ++j) {
-				Vh[i][j] = V[j][i];
+				Vhri[j] = Vci[j];
 			}
 		}
 
@@ -899,17 +913,17 @@ namespace helpers {
 	}
 
 	template<typename T>
-	constexpr auto find_max_val(const Matrix<T>& A) {
+	constexpr auto& find_max_val(const Matrix<T>& A) {
 		using matrix = std::decay_t<decltype(A)>;
-		using size_type = matrix::size_type;
-		using value_type = matrix::value_type;
+		using size_type = typename matrix::size_type;
+		using value_type = typename matrix::value_type;
 
 		const auto n = A.rows();
 		const auto m = A.cols();
 
 		// std::find/_if
-		std::vector<matrix::pointer> pointers(n, nullptr);
-		auto ctr = static_cast<matrix::difference_type>(0);
+		std::vector<typename matrix::pointer> pointers(n, nullptr);
+		auto ctr = static_cast<typename matrix::difference_type>(0);
 		std::generate(pointers.begin(), pointers.end(),
 			[
 				i = std::ref(ctr),
@@ -943,7 +957,7 @@ namespace helpers {
 			if (*it > *max_) { max_ = it; }
 			});
 
-		return result;
+		return *result;
 	}
 
 	// SVD-based inverse — replaces previous Gaussian-elim implementation
@@ -959,37 +973,37 @@ namespace helpers {
 		if (n != m) { throw std::runtime_error("Matrix inverse is only defined for square matrices"); }
 
 		using Real = value_type;
-		using complex_t = std::complex<Real>;
+		// using complex_t = std::complex<Real>;
 
 		constexpr auto eps = std::numeric_limits<Real>::epsilon();
 
-		auto [U_c, Sigma, Vh_c] = svd_jacobi<value_type>(A);
+		auto [U_c, Sigma, Vh_c] = svd_jacobi_real<value_type>(A);
 
 		// Sigma is real diagonal (p x p), here p == n for square matrix
 		// find largest singular value to form a relative tolerance
-		auto&& max_sigma = find_max_val(Sigma);
+		auto&& max_sigma = max(Sigma); // find_max_val(Sigma);
 
 		// tolerance: relative to largest singular value and machine eps
 		auto tol = eps * std::max<Real>(Real(1), max_sigma) * static_cast<Real>(n);
 
 		// build Sigma^{-1} as complex matrix (diagonal)
-		auto Sigma_inv = Matrix<complex_t>(Sigma.rows(), Sigma.cols());
+		// auto Sigma_inv = Matrix<complex_t>(Sigma.rows(), Sigma.cols());
+		auto Sigma_inv = Matrix<Real, Alloc>(Sigma.rows(), Sigma.cols());
 
 		for (size_type i = 0; i < Sigma.rows(); ++i) {
-			//Sigma_inv[i][i] = complex_t(Real(1) / Sigma[i][i]); // (Sigma[i][i] <= tol) ? complex_t(Real(0)) : complex_t(Real(1) / Sigma[i][i]);
-
+			// Sigma_inv[i][i] = complex_t(Real(1) / Sigma[i][i]); // (Sigma[i][i] <= tol) ? complex_t(Real(0)) : complex_t(Real(1) / Sigma[i][i]);
+			Sigma_inv[i][i] = Real(1) / Sigma[i][i];
 #if 1
 			auto&& s = Sigma[i][i];
 			if (s <= tol) {
 				// Matrix is singular or nearly singular.
 				// Option A: 
-				throw std::runtime_error("Matrix is singular or nearly singular (small singular value)");
+				// throw std::runtime_error("Matrix is singular or nearly singular (small singular value)");
 
 				// Option B (pseudo-inverse): comment out throw and use
 				// Sigma_inv[i][i] = complex_t(Real(0)); // leave zero -> Moore-Penrose pseudo-inverse
-			}
-			else {
-				Sigma_inv[i][i] = complex_t(Real(1) / s);
+			}	else {
+				Sigma_inv[i][i] = 1 / s; //complex_t(Real(1) / s);
 			}
 #else
 			Sigma_inv[i][i] = complex_t(Real(1) / s);
@@ -998,11 +1012,11 @@ namespace helpers {
 
 		// Recover V from Vh: V = conj(Vh)^T
 		auto V = Vh_c.transpose();
-		std::for_each(V.begin(), V.end(), [](auto& it) { it = std::conj(it); });
+		std::for_each(V.begin(), V.end(), [](auto& it) { it = it * it; }); // std::conj(it); });
 
 		// Compute U^H (conjugate transpose of U)
 		auto U_H = U_c.transpose();
-		std::for_each(U_H.begin(), U_H.end(), [](auto& it) { it = std::conj(it); });
+		std::for_each(U_H.begin(), U_H.end(), [](auto& it) { it = it * it; });// it = std::conj(it); });
 
 		// A^{-1} = V * Sigma_inv * U^H (complex matrix)
 		auto Ainv_c = (V * Sigma_inv) * U_H;
@@ -1010,7 +1024,8 @@ namespace helpers {
 		auto out = Matrix<T>(n, n);
 		for (size_type i = 0; i < n; ++i) {
 			for (size_type j = 0; j < n; ++j) {
-				out[i][j] = static_cast<T>(Ainv_c[i][j].real());
+				// out[i][j] = static_cast<T>(Ainv_c[i][j].real());
+				out[i][j] = static_cast<Real>(Ainv_c[i][j]);
 			}
 		}
 
@@ -1152,16 +1167,16 @@ namespace helpers {
 #endif
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto expm(const Matrix<T>& A) -> Matrix<T, Alloc> {
-		using matrix = std::decay_t<decltype(A)>;
+	constexpr void expm_i(const Matrix<T>& A_, Matrix<T>& R) {
+		using matrix = std::decay_t<decltype(A_)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
 
 		// expm via scaling & squaring + Padé [13/13]
-		if (A.rows() != A.cols()) { throw std::runtime_error("expm: matrix must be square"); }
+		if (A_.rows() != A_.cols()) { throw std::runtime_error("expm: matrix must be square"); }
 
 		// compute infinity norm
-		auto A_norm = infinity_norm(A);
+		auto A_norm = infinity_norm(A_);
 
 		// theta13 from Higham (approx)
 		// conservative
@@ -1171,6 +1186,7 @@ namespace helpers {
 		constexpr auto theta13_for_float = static_cast<value_type>(3.7); // for float ~3.7
 		constexpr auto theta = std::is_same_v<value_type, float> ? theta13_for_float : theta13;
 
+		auto A = A_;
 
 		int s = static_cast<int>(zero_st);
 		if (A_norm > theta) {
@@ -1233,19 +1249,26 @@ namespace helpers {
 		auto numer = V + Umat;
 		auto denom = V - Umat;
 
-		auto denom_inv = denom.inverse();
-		auto R = denom_inv * numer;
+		auto denom_inv = inverse(denom);
+		R = denom_inv * numer;
 
 		// undo scaling by repeated squaring
 		for (size_type i = 0; i < s; ++i) {
 			R = R * R;
 		}
 
+		// return R;
+	}
+
+	template<typename T, typename Alloc = std::allocator<T>>
+	inline auto expm(const Matrix<T>& A) -> Matrix<T, Alloc> {
+		auto R = Matrix<T, Alloc>();
+		expm_i<T, Alloc>(A, R);
 		return R;
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto lu(const Matrix<T>& A) -> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>> {
+	constexpr auto lu_i(const Matrix<T>& A, Matrix<T>& L, Matrix<T>& U, Matrix<T>& P) { // -> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>> {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1253,9 +1276,9 @@ namespace helpers {
 		if (!(A.is_square())) { throw std::runtime_error("LU decomposition is only defined for square matrices"); }
 		const auto n = A.rows();
 
-		auto L = identity<T, Alloc>(n);
-		auto U = A;
-		auto P = identity<T, Alloc>(n);
+		L = identity<T, Alloc>(n);
+		U = A;
+		P = identity<T, Alloc>(n);
 
 		auto swap_rows = [&L, &U, &P](size_type current_row, size_type max_value_row) {
 			utils::swap_r(U.row(current_row), U.row(max_value_row));
@@ -1286,7 +1309,16 @@ namespace helpers {
 			process(c);
 		});
 
-		return std::make_tuple(P, L, U);
+		// return std::make_tuple(P, L, U);
+	}
+
+	template <typename T, typename Alloc = std::allocator<T>>
+	constexpr auto lu(const Matrix<T>&A) {
+		using X = Matrix<T, Alloc>;
+		auto t = std::tuple<X, X, X>();
+		auto& [L, U, P] = t;
+		lu_i<T, Alloc>(A, L, U, P);
+		return t;
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
