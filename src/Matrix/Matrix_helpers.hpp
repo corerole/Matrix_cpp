@@ -48,6 +48,7 @@ namespace utils {
 	}
 
 #if 0
+	// trubles with ADL
 	constexpr void swap_r(std::ranges::input_range auto&& fst, std::ranges::input_range auto&& snd) {
 		auto sb = snd.begin();
 		std::ranges::for_each(fst, [&sb](auto&& it) {
@@ -83,6 +84,35 @@ namespace helpers {
 		return result;
 	}
 
+	// O(N)
+	constexpr auto sum(std::ranges::input_range auto&& r) {
+		using value_type = std::ranges::range_value_t<decltype(r)>;
+		return std::accumulate(r.begin(), r.end(), static_cast<value_type>(0));
+	}
+
+	// O(N)
+	constexpr auto abs_sum(std::ranges::input_range auto&& r) {
+		using value_type = std::ranges::range_value_t<decltype(r)>;
+		auto sum = std::accumulate(r.begin(), r.end(),
+			static_cast<value_type>(0),
+			[](auto&& init, auto&& it) -> auto&& {
+				init += std::abs(it);
+				return std::move(init);
+			}
+		);
+		return sum;
+	}
+
+	// O(N)
+	constexpr auto& max(utils::arithmetic_input_range auto&& r) {
+		using value_type = std::ranges::range_value_t<decltype(r)>;
+		auto max_val = &(*r.begin());
+		std::ranges::for_each(r, [&max_val](auto&& it) {
+			max_val = (((*max_val) > (it)) ? max_val : &it);
+		});
+		return *max_val;
+	}
+
 	template<utils::arithmetic value_type>
 	constexpr void scale_matrix_self(Matrix<value_type>& A) {
 		constexpr auto zero = static_cast<value_type>(0);
@@ -99,37 +129,9 @@ namespace helpers {
 		return B;
 	}
 
-	// O(N)
-	constexpr auto sum(const utils::Container auto& cnt) {
-		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
-		return std::accumulate(cnt.begin(), cnt.end(), static_cast<value_type>(0));
-	}
-
-	// O(N)
-	constexpr auto abs_sum(const utils::Container auto& cnt) {
-		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
-		auto sum = std::accumulate(cnt.begin(), cnt.end(),
-			static_cast<value_type>(0),
-			[](auto&& init, auto&& it) {
-				init += std::abs(it);
-			}
-		);
-		return sum;
-	}
-
-	// O(N)
-	constexpr auto& max(utils::arithmetic_input_range auto&& r) {
-		using value_type = typename decltype(std::ranges::begin(r))::value_type;
-		auto max_val = &(*r.begin());
-		std::ranges::for_each(r, [&max_val](auto&& it) {
-			max_val = (((*max_val) > (it)) ? max_val : &it);
-		});
-		return *max_val;
-	}
-
 	// return non-abs val&
 	constexpr auto& max_abs(utils::arithmetic_input_range auto&& r) {
-		using value_type = typename decltype(std::ranges::begin(r))::value_type;
+		using value_type = std::ranges::range_value_t<decltype(r)>;
 		auto max_val = &(*r.begin());
 		std::ranges::for_each(r, [&max_val](auto&& it) {
 			// max_val = &(std::max(it, *max_val)); // std::max return const &Ty_
@@ -140,14 +142,14 @@ namespace helpers {
 
 	// O(N)
 	constexpr auto euclid_norm(utils::arithmetic_input_range auto&& r) {
-		using value_type = typename decltype(std::ranges::begin(r))::value_type;
+		using value_type = std::ranges::range_value_t<decltype(r)>;
 		auto acc = static_cast<value_type>(0);
 		std::ranges::for_each(r, [&acc](auto&& it) { acc += it * it; });
 		return utils::sqrt<value_type>(acc);
 	}
 
 	constexpr auto euclid_norm(utils::complex_input_range auto&& r) {
-		using value_type = typename decltype(std::ranges::begin(r))::value_type::value_type;
+		using value_type = std::ranges::range_value_t<decltype(r)>::value_type;
 		auto acc = static_cast<value_type>(0);
 		std::ranges::for_each(r, [&acc](auto&& it) {
 			const auto t = std::abs(it);
@@ -175,7 +177,7 @@ namespace helpers {
 
 	// O(N)
 	template<typename T>
-	constexpr auto matrix_euclid_max_col_norm(const Matrix<T>& A) noexcept {
+	constexpr auto matrix_euclid_max_col_norm(const Matrix<T>& A) {
 		if constexpr (utils::complex<T>) {
 			using value_type = Matrix<T>::value_type::value_type;
 			auto max_val = std::numeric_limits<value_type>::lowest();
@@ -193,12 +195,13 @@ namespace helpers {
 	}
 
 	// O(N)
-	constexpr auto manhattan_norm(const utils::Container auto& cnt) {
-		return abs_sum(cnt);
+	constexpr auto manhattan_norm(std::ranges::input_range auto&& r) {
+		using value_type = std::ranges::range_value_t<decltype(r)>;
+		return abs_sum(r);
 	}
 
 	// O(N)
-	constexpr auto lp_norm(const utils::Container auto& cnt, utils::arithmetic auto exp) {
+	constexpr auto lp_norm(std::ranges::input_range auto&& cnt, utils::arithmetic auto exp) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		constexpr const auto zero = static_cast<value_type>(0);
 		constexpr const auto one = static_cast<value_type>(1);
@@ -212,7 +215,7 @@ namespace helpers {
 	}
 
 	// O(N)
-	constexpr auto infinity_norm(const utils::Container auto& cnt) { return max(cnt); }
+	constexpr auto infinity_norm(std::ranges::input_range auto&& r) { return max(r); }
 
 	// O(N)
 	constexpr auto mean(const utils::Container auto& cnt) {
@@ -231,10 +234,11 @@ namespace helpers {
 	}
 
 	// O(2N)
-	constexpr auto variance(const utils::Container auto& cnt) {
-		const auto m = mean(cnt);
-		const auto rmo = static_cast<decltype(m)>(cnt.size() - 1);
-		auto acc = std::accumulate(cnt.begin(), cnt.end(),
+	// is sized range?
+	constexpr auto variance(std::ranges::input_range auto&& r) {
+		const auto m = mean(r);
+		const auto rmo = static_cast<decltype(m)>(r.size() - 1);
+		auto acc = std::accumulate(r.begin(), r.end(),
 			static_cast<decltype(m)>(0),
 			[m](auto&& init, auto&& it) {
 				init += (it - m) * (it - m);
@@ -244,8 +248,8 @@ namespace helpers {
 	}
 
 	// O(2N)
-	constexpr auto standard_deviation(const utils::Container auto& cnt) {
-		return utils::sqrt(variance(cnt));
+	constexpr auto standard_deviation(std::ranges::input_range auto&& r) {
+		return utils::sqrt(variance(r));
 	}
 
 	// O(N)
@@ -275,23 +279,84 @@ namespace helpers {
 		return x;
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto determinant(const Matrix<T>& A) -> std::decay_t<decltype(A)>::value_type {
+	template<typename T>
+	static constexpr auto determinant_impl(const Matrix<T>& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
+		constexpr auto eps = std::numeric_limits<value_type>::epsilon();
 
+		auto temp = A;
+		auto det = static_cast<value_type>(1);
+		const auto r = temp.rows();
+
+#if 0
+		for (size_type k = 0; k < r; ++k) {
+			auto tck = temp.col(k);
+			auto trk = temp.row(k);
+			auto tck_r = std::ranges::subrange(tck.begin() + k, tck.end());
+			auto&& max_row = temp.get_elem_row(max_abs(tck_r));
+
+			if (max_row != k) {
+#if 1
+				auto temp_mr = temp.row(max_row);
+				auto temp_kr = temp.row(k);
+				auto temp_mr_r = std::ranges::subrange(temp_mr.begin() + k, temp_mr.end());
+				auto temp_kr_r = std::ranges::subrange(temp_kr.begin() + k, temp_kr.end());
+				utils::swap_r(temp_kr_r, temp_mr_r);
+#else
+				for (size_type j = k; j < r; ++j) {
+					std::swap(temp[k][j], temp[max_row][j]);
+				}
+#endif
+				det = -det;
+			}
+
+
+			
+			auto&& tkk = temp[k][k];
+			for (size_type i = k + 1; i < r; ++i) {
+				auto factor = tck[i] / tkk;
+				for (size_type j = k + 1; j < r; ++j) {
+					temp[i][j] -= factor * trk[j];
+				}
+			}
+
+			det *= temp[k][k];
+		}
+#endif
+		auto&& last_elem = tmp[temp.rows() - 1][temp.rows() - 1];
+		std::ranges::for_each(temp.diagonal_range(), [&temp, &det, &last_elem](auto&& it) {
+			auto&& sub = temp.submatrix(it, last_elem);
+			auto&& itr = sub.get_elem_row(it);
+			auto&& max_row_elem = max_abs(itr);
+			if (max_row_elem != it) {
+				utils::swap_r(sub.get_elem_row(max_elem_row), itr);
+				det = -det;
+			}
+
+			std::ragnes::for_each(sub.row_range(), [&sub, it](auto&& row) {
+				auto factor = ;
+				std::ranges::for_each(row, [](auto&& elem) {
+						elem -= factor * 
+				});
+			});
+		});
+
+		return det;
+	}
+
+	template<typename T, typename Alloc = std::allocator<T>>
+	constexpr auto determinant(const Matrix<T>& A) -> std::decay_t<decltype(A)>::value_type {
 		const auto r = A.rows();
 		const auto c = A.cols();
 
 		if (r != c) { throw std::runtime_error("Determinant is only defined for square matrices"); }
 		if (r == 1) { return A[0][0]; }
-
 		if (r == 2) {
 			const auto res = A[0][0] * A[1][1] - A[0][1] * A[1][0];
 			return res;
 		}
-
 
 		if (r == 3) {
 			const auto res = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
@@ -300,47 +365,7 @@ namespace helpers {
 			return res;
 		}
 
-		auto temp = A;
-		auto det = static_cast<value_type>(1);
-#if 1
-		
-#endif
-
-		for (size_type k = 0; k < r; ++k) {
-			size_type max_row = k;
-			auto max_val = std::abs(temp[k][k]);
-			for (size_type i = k + 1; i < r; ++i) {
-				auto abs_val = std::abs(temp[i][k]);
-				if (abs_val > max_val) {
-					max_val = abs_val;
-				}
-
-				if (abs_val == max_val) {
-					max_row = i;
-				}
-			}
-
-			if (max_val < std::numeric_limits<value_type>::epsilon()) {
-				return static_cast<value_type>(0);
-			}
-
-			if (max_row != k) {
-				for (size_type j = k; j < r; ++j) {
-					std::swap(temp[k][j], temp[max_row][j]);
-				}
-				det = -det;
-			}
-
-			for (size_type i = k + 1; i < r; ++i) {
-				auto factor = temp[i][k] / temp[k][k];
-				for (size_type j = k + 1; j < r; ++j) {
-					temp[i][j] -= factor * temp[k][j];
-				}
-			}
-
-			det *= temp[k][k];
-		}
-		return det;
+		return determinant_impl(A);
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
