@@ -279,11 +279,13 @@ namespace helpers {
 		return x;
 	}
 
+
 	template<typename T>
 	static constexpr auto determinant_impl(const Matrix<T>& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
+#if 0
 		constexpr auto eps = std::numeric_limits<value_type>::epsilon();
 
 		auto temp = A;
@@ -325,25 +327,25 @@ namespace helpers {
 			det *= temp[k][k];
 		}
 #endif
-		auto&& last_elem = tmp[temp.rows() - 1][temp.rows() - 1];
+		auto&& last_elem = temp[temp.rows() - 1][temp.rows() - 1];
 		std::ranges::for_each(temp.diagonal_range(), [&temp, &det, &last_elem](auto&& it) {
 			auto&& sub = temp.submatrix(it, last_elem);
 			auto&& itr = sub.get_elem_row(it);
 			auto&& max_row_elem = max_abs(itr);
 			if (max_row_elem != it) {
-				utils::swap_r(sub.get_elem_row(max_elem_row), itr);
+				utils::swap_r(sub.get_elem_row(max_row_element), itr);
 				det = -det;
 			}
 
-			std::ragnes::for_each(sub.row_range(), [&sub, it](auto&& row) {
+			std::ranges::for_each(sub.row_range(), [&sub, it](auto&& row) {
 				auto factor = ;
 				std::ranges::for_each(row, [](auto&& elem) {
 						elem -= factor * 
 				});
 			});
 		});
-
-		return det;
+#endif
+		return static_cast<value_type>(0);
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>

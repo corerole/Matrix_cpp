@@ -46,7 +46,7 @@ namespace detail {
 			constexpr TestCont() noexcept = default;
 	};
 
-	using tCont = typename TestCont<float>;
+	using tCont = TestCont<float>;
 }
 
 template<typename Cont>
@@ -766,7 +766,7 @@ struct matrix_const_col_iterator {
 
 	public:
 		constexpr value_type operator*() const { return value_type(ptr, rows, stride); }
-		constexpr pointer operator->() const { return nullptr;  }
+		constexpr pointer operator->() const { /* return nullptr; */ }
 		constexpr value_type operator[](size_type n) const { return value_type(ptr + n, rows, stride); }
 
 	public:
@@ -925,7 +925,7 @@ static_assert(std::random_access_iterator<matrix_const_diagonal_iterator<detail:
 template<typename Cont>
 struct matrix_diagonal_iterator final : public matrix_const_diagonal_iterator<Cont> {
 	private:
-		using base_t = typename matrix_const_diagonal_iterator<Cont>;
+		using base_t = matrix_const_diagonal_iterator<Cont>;
 
 	public:
 		using typename base_t::value_type;
@@ -1360,7 +1360,7 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 template<typename Cont>
 struct Submatrix : public const_Submatrix<Cont> {
 	private:
-		using base_t = typename const_Submatrix<Cont>;
+		using base_t = const_Submatrix<Cont>;
 
 	public:
 		using typename base_t::value_type;
@@ -1615,7 +1615,7 @@ struct Matrix {
 		using const_reference = const value_type&;
 
 	private:
-		using base = typename Matrix<value_type, allocator_type>;
+		using base = Matrix<value_type, allocator_type>;
 
 	public:
 		using submatrix = Submatrix<base>;
@@ -2189,14 +2189,14 @@ struct Matrix {
 			return mult(*this, other);
 		}
 
-		template<typename U, typename Alloc = std::allocator<std::common_type_t<value_type, U>>>
+		template<typename U, typename Alloc_ = std::allocator<std::common_type_t<value_type, U>>>
 		constexpr Matrix& operator*=(const Matrix<U>& other) {
 			auto&& it = *this;
 			if (cols() != other.rows()) {
 				throw std::runtime_error("Matrix dimensions do not match for multiplication");
 			}
 			using ResultType = std::common_type_t<value_type, U>;
-			it = mult<value_type, U, ResultType, Alloc>(*this, other);
+			it = mult<value_type, U, ResultType, Alloc_>(*this, other);
 			return it;
 		}
 

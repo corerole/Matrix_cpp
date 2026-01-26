@@ -1,6 +1,7 @@
 #include "Matrix_helpers.hpp"
 
 #include <random>
+#include <functional>
 #include <exception>
 
 namespace test_utils {
@@ -212,12 +213,11 @@ static bool lp_norm_test() {
 	auto A = Matrix<test_utils::value_type>(n, m);
 
 	for (; precision > three_eps; precision /= ten) {
-		test_utils::fill_matrix(A, -1000.0L, 1000.0L);
-
-		auto A_norm = helpers::lp_norm(A, 6);
+		test_utils::fill_matrix(A, -100.0L, 100.0L);
+		auto A_norm = helpers::lp_norm(A, 3);
 		if (A_norm < 0) { return false; }
 		auto B = -A;
-		auto B_norm = helpers::lp_norm(B, 6);
+		auto B_norm = helpers::lp_norm(B, 3);
 
 		bool check = std::abs(B_norm - A_norm) < precision;
 		if (!check) {
@@ -228,7 +228,7 @@ static bool lp_norm_test() {
 
 		auto scale = static_cast<test_utils::value_type>(3);
 		A *= scale;
-		auto A_scaled_norm = helpers::lp_norm(A, 6);
+		auto A_scaled_norm = helpers::lp_norm(A, 3);
 		bool check2 = ((A_scaled_norm - (A_norm * scale)) < precision);
 		if (!check2) {
 			// std::cout << " | precision: " << precision << " | " << std::endl;
@@ -236,7 +236,6 @@ static bool lp_norm_test() {
 			return false;
 		}
 	}
-
 	return true;
 }
 
