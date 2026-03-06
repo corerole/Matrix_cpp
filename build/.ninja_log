@@ -1,0 +1,7 @@
+# ninja log v7
+4	1262	7911443577393511	CMakeFiles/Matrix.dir/src/Matrix/Matrix.cpp.obj	c00348d5ff3441e6
+11	1308	7911443577463855	CMakeFiles/Matrix_test.dir/src/main.cpp.obj	704d0b76a80e8ac7
+1263	1367	7911443589900039	Matrix.lib	2d7e36df136ccf91
+8	1473	7911443577433893	CMakeFiles/MatrixHelpers.dir/src/Matrix/Matrix_helpers.cpp.obj	e64d73dff02d9154
+1474	1509	7911443592064274	MatrixHelpers.lib	22b7d0fdcf9e73aa
+1509	1791	7911443592424610	Matrix_test.exe	3dd54640bfd1078e

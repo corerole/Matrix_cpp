@@ -1,0 +1,5 @@
+C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/Matrix.dir
+C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/MatrixHelpers.dir
+C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/Matrix_test.dir
+C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/edit_cache.dir
+C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/rebuild_cache.dir

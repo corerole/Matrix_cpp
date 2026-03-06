@@ -1594,7 +1594,6 @@ struct Submatrix : public const_Submatrix<Cont> {
 
 };
 // static_assert(std::ranges::view<Submatrix<detail::tCont>>);
-
 template<typename T> constexpr auto maybe_null(T ptr) { return ptr ? std::addressof(*ptr) : nullptr; }
 
 template<typename allocator_type, typename value_type> using rebound_allocator = typename std::allocator_traits<allocator_type>::template rebind_alloc<value_type>;
@@ -1602,11 +1601,11 @@ template<typename allocator_type, typename value_type> using rebound_allocator =
 template<detail::object T, typename Alloc = std::allocator<T>>
 struct Matrix {
 	public:
-		using allocator_type = Alloc;
-		using allocator_traits = std::allocator_traits<rebound_allocator<Alloc, T>>;
+		using allocator_type = rebound_allocator<Alloc, T>;
+		using allocator_traits = std::allocator_traits<allocator_type>;
 
 	public:
-		using value_type = typename allocator_traits::value_type;
+		using value_type = T;
 		using pointer = typename allocator_traits::pointer;
 		using const_pointer = typename allocator_traits::const_pointer;
 		using size_type = typename allocator_traits::size_type;
@@ -1651,8 +1650,8 @@ struct Matrix {
 	public:
 		constexpr Matrix() noexcept = default;
 
-		explicit Matrix(size_type rows, size_type cols)
-			: _rows(rows), _cols(cols) {
+		Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
+			: _rows(rows), _cols(cols), _allocator(allocator) {
 			if (_rows == 0 || _cols == 0) {
 				_rows = _cols = 0;
 				_data = nullptr;
@@ -1686,7 +1685,8 @@ struct Matrix {
 				for (size_type i = 0; i < n; ++i) {
 					allocator_traits::construct(_allocator, std::addressof(_data[i]), other._data[i]);
 				}
-			} else {
+			}
+			else {
 				_data = nullptr;
 			}
 		}
@@ -1731,12 +1731,24 @@ struct Matrix {
 			return _data + (r * _cols + c);
 		}
 
+	private:
+		constexpr allocator_type& _get_allocator() noexcept {
+			return _allocator;
+		}
+
+		constexpr const allocator_type& _get_allocator() const noexcept {
+			return _allocator;
+		}
+
 	public:
 		constexpr size_type size() const noexcept { return _rows * _cols; }
 		constexpr size_type rows() const noexcept { return _rows; }
 		constexpr size_type cols() const noexcept { return _cols; }
 		constexpr bool empty() const noexcept { return ((_rows == 0) || (_cols == 0)); }
 		constexpr bool is_square() const noexcept { return _rows == _cols; }
+		constexpr allocator_type get_allocator() const noexcept {
+			return _get_allocator();
+		}
 
 
 		constexpr size_type get_elem_row_index(const value_type& elem) const noexcept {

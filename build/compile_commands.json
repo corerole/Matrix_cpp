@@ -1,0 +1,20 @@
+[
+{
+  "directory": "C:/Users/corerole/source/repos/Matrix_cpp/build",
+  "command": "C:\\PROGRA~1\\LLVM\\bin\\clang-cl.exe  /nologo -TP /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MDd /Ob0 /Od /RTC1 -clang:-std=c++23 -Zi /FoCMakeFiles\\Matrix.dir\\src\\Matrix\\Matrix.cpp.obj /FdCMakeFiles\\Matrix.dir\\ -c -- C:\\Users\\corerole\\source\\repos\\Matrix_cpp\\src\\Matrix\\Matrix.cpp",
+  "file": "C:/Users/corerole/source/repos/Matrix_cpp/src/Matrix/Matrix.cpp",
+  "output": "C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/Matrix.dir/src/Matrix/Matrix.cpp.obj"
+},
+{
+  "directory": "C:/Users/corerole/source/repos/Matrix_cpp/build",
+  "command": "C:\\PROGRA~1\\LLVM\\bin\\clang-cl.exe  /nologo -TP /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MDd /Ob0 /Od /RTC1 -clang:-std=c++23 -Zi /FoCMakeFiles\\MatrixHelpers.dir\\src\\Matrix\\Matrix_helpers.cpp.obj /FdCMakeFiles\\MatrixHelpers.dir\\ -c -- C:\\Users\\corerole\\source\\repos\\Matrix_cpp\\src\\Matrix\\Matrix_helpers.cpp",
+  "file": "C:/Users/corerole/source/repos/Matrix_cpp/src/Matrix/Matrix_helpers.cpp",
+  "output": "C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/MatrixHelpers.dir/src/Matrix/Matrix_helpers.cpp.obj"
+},
+{
+  "directory": "C:/Users/corerole/source/repos/Matrix_cpp/build",
+  "command": "C:\\PROGRA~1\\LLVM\\bin\\clang-cl.exe  /nologo -TP /DWIN32 /D_WINDOWS /W3 /GR /EHsc /MDd /Ob0 /Od /RTC1 -clang:-std=c++23 -Zi /FoCMakeFiles\\Matrix_test.dir\\src\\main.cpp.obj /FdCMakeFiles\\Matrix_test.dir\\ -c -- C:\\Users\\corerole\\source\\repos\\Matrix_cpp\\src\\main.cpp",
+  "file": "C:/Users/corerole/source/repos/Matrix_cpp/src/main.cpp",
+  "output": "C:/Users/corerole/source/repos/Matrix_cpp/build/CMakeFiles/Matrix_test.dir/src/main.cpp.obj"
+}
+]
