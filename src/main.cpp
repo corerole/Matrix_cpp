@@ -7,14 +7,13 @@ int main() {
 	/*
 	*  Ctors;
 	*/
-	using mtx = Matrix<char>;
-	mtx a1;
-	mtx a2(3, 4); // def
-	mtx a3(a2); // copy
-	mtx a4(std::move(a3)); // move
-	mtx a5 = a2; // ass copy
-	mtx a6 = std::move(a2); // ass move
-
+	using mtx = pmrMatrix<char>;
+	// all of this noexcept copy
+	mtx a1(3, 4); // def
+	mtx a2(a1); // copy
+	mtx a3(std::move(a1)); // move
+	mtx a4 = a1; // ass copy
+	mtx a5 = std::move(a1); // ass move
 
 	constexpr size_t BS = 4000;
 	std::array<std::byte, BS> buf;
@@ -27,5 +26,6 @@ int main() {
 	A[2][0] = 0.0f; A[2][1] = 1.0f; A[2][2] = 2.0f; A[2][3] = -1.0f;
 	A[3][0] = -2.0f; A[3][1] = 0.0f; A[3][2] = 1.0f; A[3][3] = -1.0f;
 
+	helpers_tests();
 	return 0;
 }

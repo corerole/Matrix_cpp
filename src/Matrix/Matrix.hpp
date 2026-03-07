@@ -1647,83 +1647,93 @@ struct Matrix {
 		using diagonal_reverse_iterator = std::reverse_iterator<diagonal_iterator>;
 		using diagonal_const_reverse_iterator = std::reverse_iterator<diagonal_const_iterator>;
 
-	public:
-		constexpr Matrix() noexcept = default;
-
-		Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
-			: _rows(rows), _cols(cols), _allocator(allocator) {
-			if (_rows == 0 || _cols == 0) {
-				_rows = _cols = 0;
-				_data = nullptr;
-				return;
-			}
-			const size_type n = _rows * _cols;
-			_data = allocator_traits::allocate(_allocator, n);
-			for (size_type i = 0; i < n; ++i) {
-				allocator_traits::construct(_allocator, std::addressof(_data[i]));
-			}
-		}
-
-		// dtor
-		~Matrix() {
+	private:
+		void erase() {
 			if (_data) {
-				const size_type n = _rows * _cols;
+				const auto n = _rows * _cols;
 				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::destroy(_allocator, std::addressof(_data[i]));
+					allocator_traits::destroy(_allocator, &_data[i]);
 				}
 				allocator_traits::deallocate(_allocator, _data, n);
 				_data = nullptr;
 			}
+			_cols = 0;
+			_rows = 0;
 		}
 
-		// copy
-		Matrix(const Matrix& other)
-			: _rows(other._rows), _cols(other._cols) {
-			if (other._data) {
-				const size_type n = _rows * _cols;
+	public:
+		Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
+			: _rows(rows)
+			, _cols(cols)
+			, _allocator(allocator)
+		{
+			const auto n = _rows * _cols;
+			if (n > 0) {
 				_data = allocator_traits::allocate(_allocator, n);
 				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::construct(_allocator, std::addressof(_data[i]), other._data[i]);
+					allocator_traits::construct(_allocator, &_data[i]);
 				}
-			}
-			else {
+			}	else {
 				_data = nullptr;
 			}
 		}
 
-		// move
-		Matrix(Matrix&& other) noexcept
-			: _rows(other._rows), _cols(other._cols), _allocator(std::move(other._allocator)), _data(other._data) {
-			other._rows = other._cols = 0;
-			other._data = nullptr;
+		Matrix(const Matrix& rhs) : Matrix(rhs._rows, rhs._cols) {
+			if (_data) {
+				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+			}
 		}
 
-		// copy assign
-		Matrix& operator=(const Matrix& other) {
-			if (this == &other) return *this;
-			Matrix tmp(other);
-			swap(tmp);
+		Matrix(const Matrix& rhs, const allocator_type& allocator)
+			: Matrix(rhs._rows, rhs._cols, allocator) {
+			if (_data) {
+				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+			}
+		}
+
+		Matrix(Matrix&& rhs) : Matrix(rhs._rows, rhs._cols) {
+			if (_data) {
+				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+			}
+		}
+
+		Matrix(Matrix&& rhs, const allocator_type& allocator)
+			: Matrix(rhs._rows, rhs._cols, allocator) {
+			if (_data) {
+				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+			}
+		}
+
+		Matrix& operator=(const Matrix& rhs) {
+			erase();
+			const auto n = rhs._rows * rhs._cols;
+			if (n > 0) {
+				_data = allocator_traits::allocate(_allocator, n);
+				for (size_type i = 0; i < n; ++i) {
+					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+				}
+			}	else {
+				_data = nullptr;
+			}
+			_rows = rhs._rows;
+			_cols = rhs._cols;
 			return *this;
 		}
 
-		// move assign
-		Matrix& operator=(Matrix&& other) noexcept {
-			if (this == &other) return *this;
-			this->~Matrix();
-			_rows = other._rows;
-			_cols = other._cols;
-			_allocator = std::move(other._allocator);
-			_data = other._data;
-			other._rows = other._cols = 0;
-			other._data = nullptr;
+		Matrix& operator=(Matrix&& rhs) {
+			erase();
+			const auto n = rhs._rows * rhs._cols;
+			if (n > 0) {
+				_data = allocator_traits::allocate(_allocator, n);
+				for (size_type i = 0; i < n; ++i) {
+					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+				}
+			}	else {
+				_data = nullptr;
+			}
+			_rows = rhs._rows;
+			_cols = rhs._cols;
 			return *this;
-		}
-
-		void swap(Matrix& o) noexcept {
-			std::swap(_rows, o._rows);
-			std::swap(_cols, o._cols);
-			std::swap(_allocator, o._allocator);
-			std::swap(_data, o._data);
 		}
 
 	private:
