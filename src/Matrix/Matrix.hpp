@@ -1662,11 +1662,13 @@ struct Matrix {
 		}
 
 	public:
+		Matrix(const allocator_type& allocator) : _allocator(allocator) {}
+
 		Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
-			: _rows(rows)
-			, _cols(cols)
-			, _allocator(allocator)
+			: Matrix(allocator)
 		{
+			_rows = rows;
+			_cols = cols;
 			const auto n = _rows * _cols;
 			if (n > 0) {
 				_data = allocator_traits::allocate(_allocator, n);
@@ -1678,23 +1680,38 @@ struct Matrix {
 			}
 		}
 
-		Matrix(const Matrix& rhs) : Matrix(rhs._rows, rhs._cols) {
-			if (_data) {
-				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+		Matrix(const Matrix& rhs) : Matrix(rhs.get_allocator()) {
+			_rows = rhs._rows;
+			_cols = rhs._cols;
+			const auto n = _rows * _cols;
+			if (n > 0) {
+				_data = allocator_traits::allocate(_allocator, n);
+				for (size_type i = 0; i < n; ++i) {
+					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+				}
+			} else {
+				_data = nullptr;
 			}
 		}
 
-		Matrix(const Matrix& rhs, const allocator_type& allocator)
-			: Matrix(rhs._rows, rhs._cols, allocator) {
-			if (_data) {
-				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
+		Matrix(const Matrix& rhs, const allocator_type& allocator) : Matrix(allocator) {
+			_rows = rhs._rows;
+			_cols = rhs._cols;
+			const auto n = _rows * _cols;
+			if (n > 0) {
+				_data = allocator_traits::allocate(_allocator, n);
+				for (size_type i = 0; i < n; ++i) {
+					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+				}
+			}	else {
+				_data = nullptr;
 			}
 		}
 
-		Matrix(Matrix&& rhs) : Matrix(rhs._rows, rhs._cols) {
-			if (_data) {
-				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
-			}
+		Matrix(Matrix&& rhs) noexcept : Matrix(rhs.get_allocator()) {
+			std::swap(rhs._data, _data);
+			std::swap(rhs._cols, _cols);
+			std::swap(rhs._rows, _rows);
 		}
 
 		Matrix(Matrix&& rhs, const allocator_type& allocator)
@@ -1705,6 +1722,7 @@ struct Matrix {
 		}
 
 		Matrix& operator=(const Matrix& rhs) {
+			if (&rhs == this) { return *this; }
 			erase();
 			const auto n = rhs._rows * rhs._cols;
 			if (n > 0) {
@@ -1721,18 +1739,13 @@ struct Matrix {
 		}
 
 		Matrix& operator=(Matrix&& rhs) {
-			erase();
-			const auto n = rhs._rows * rhs._cols;
-			if (n > 0) {
-				_data = allocator_traits::allocate(_allocator, n);
-				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
-				}
+			if (_allocator == rhs.allocator) {
+				std::swap(_data, rhs._data);
+				std::swap(_rows, rhs._rows);
+				std::swap(_cols, rhs._cols);
 			}	else {
-				_data = nullptr;
+				operator=(rhs);
 			}
-			_rows = rhs._rows;
-			_cols = rhs._cols;
 			return *this;
 		}
 
