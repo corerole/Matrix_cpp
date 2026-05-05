@@ -1,9 +1,10 @@
-﻿#pragma once
-#ifndef MY_MATRIX
+﻿#ifndef MY_MATRIX
 #define MY_MATRIX
+#pragma once
 
 #include <iostream>
 #include <memory>
+#include <memory_resource>
 #include <type_traits>
 #include <iterator>
 #include <cstddef>
@@ -48,6 +49,17 @@ namespace detail {
 
 	using tCont = TestCont<float>;
 }
+
+template<typename, typename, typename> struct rebind_container;
+template<template<typename, typename> class Container,
+	typename OldT, typename OldAlloc,
+	typename NewT, typename NewAlloc>
+struct rebind_container<Container<OldT, OldAlloc>, NewT, NewAlloc> {
+	using type = Container<NewT, NewAlloc>;
+};
+
+template<typename Old, typename NewT, typename NewAlloc = void>
+using rebind_container_t = typename rebind_container<Old, NewT, NewAlloc>::type;
 
 template<typename Cont>
 struct row_const_iterator {
@@ -179,7 +191,7 @@ struct const_RowProxy : public std::ranges::view_interface<const_RowProxy<Cont>>
 		constexpr const_RowProxy(pointer p, size_type c) noexcept : row_data(p), cols(c) {}
 
 	public:
-		constexpr const_reference operator[](size_type c) const { return row_data[c]; }
+		constexpr const_reference operator[](difference_type c) const { return *(row_data + c); }
 
 	public:
 		constexpr const_iterator begin() const noexcept { return const_iterator(row_data); }
@@ -230,7 +242,8 @@ struct RowProxy final : public const_RowProxy<Cont> {
 		constexpr RowProxy(pointer data, size_type c) noexcept : base_t(data, c) {};
 
 	public:
-		constexpr reference operator[](size_type c) { return row_data[c];	}
+		constexpr reference operator[](difference_type c) { return row_data[c];	}
+		constexpr const_reference operator[](difference_type c) const { return row_data[c]; }
 		
 	public:
 		constexpr iterator begin() noexcept { return iterator(row_data); }
@@ -402,7 +415,7 @@ struct const_ColProxy : public std::ranges::view_interface<const_ColProxy<Cont>>
 			: col_data(base), rows(r), stride(stride_) {
 		}
 
-		constexpr const_reference operator[](size_type r) const {
+		constexpr const_reference operator[](difference_type r) const {
 			return *(col_data + r * stride);
 		}
 
@@ -455,7 +468,11 @@ struct ColProxy final : public const_ColProxy<Cont> {
 			: base_t(base, r, stride) { // col_data(base), rows(r), stride(stride_) {
 		}
 
-		constexpr reference operator[](size_type r) {
+		constexpr const_reference operator[](difference_type r) const {
+			return *(col_data + r * stride);
+		}
+
+		constexpr reference operator[](difference_type r) {
 			return *(col_data + r * stride);
 		}
 
@@ -478,6 +495,12 @@ struct ColProxy final : public const_ColProxy<Cont> {
 		constexpr const_reference front() const { return *col_data; }
 		constexpr reference back() { return *(col_data + (rows - 1) * stride); }
 		constexpr const_reference back() const { return *(col_data + (rows - 1) * stride); }
+
+#if 0
+	public:
+		std::ranges::subrange get_range() { return std::ranges::subrange(begin(), end()); }
+		std::ranges::subrange get_range() const { return std::ranges::subrange(cbegin(), cend()); }
+#endif
 };
 
 template<typename T> concept derived_view_base_check = std::derived_from<T, std::ranges::view_base>;
@@ -641,7 +664,7 @@ struct matrix_const_row_iterator {
 		constexpr matrix_const_row_iterator(internal_pointer ptr, size_type cols) noexcept : ptr(ptr), cols(cols) {}
 
 		constexpr value_type operator*() const { return value_type(ptr, cols); }
-		// constexpr pointer operator->() const { return nullptr; }
+		//constexpr internal_reference operator->() const { return *ptr; }
 		constexpr value_type operator[](size_type n) const {
 			return value_type((ptr + cols * n), cols);
 		}
@@ -1143,6 +1166,8 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 		using reference = Cont::reference;
 		using const_reference = Cont::const_reference;
 
+		using allocator_type = Cont::allocator_type;
+
 	public:
 #if 0
 		using iterator = submatrix_const_default_iterator<Cont>;
@@ -1167,8 +1192,13 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 		using const_diagonal_reverse_iterator = diagonal_reverse_iterator;
 
 	public:
+#if 0
 		using const_col_proxy = const_ColProxy<Cont>;
 		using const_row_proxy = const_RowProxy<Cont>;
+#else
+		using const_col_proxy = const_ColProxy<const_Submatrix>;
+		using const_row_proxy = const_RowProxy<const_Submatrix>;
+#endif
 
 	protected:
 		Cont* cont = nullptr;
@@ -1186,7 +1216,8 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 			auto&& l = *last;
 			auto&& from_y = mtx.get_elem_row_index(f);
 			auto&& to_y = mtx.get_elem_row_index(l);
-			return to_y - from_y + 1;
+			constexpr auto one = static_cast<size_type>(1);
+			return to_y - from_y + one;
 		}
 		constexpr size_type cols() const noexcept {
 			auto&& mtx = *cont;
@@ -1194,27 +1225,51 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 			auto&& l = *last;
 			auto&& from_x = mtx.get_elem_col_index(f);
 			auto&& to_x = mtx.get_elem_col_index(l);
-			return to_x - from_x + 1; 
+			constexpr auto one = static_cast<size_type>(1);
+			return to_x - from_x + one; 
 		}
 		constexpr size_type size() const noexcept { return rows() * cols(); }
 		constexpr pointer data()  const noexcept { return first; }
 		constexpr bool is_square() const noexcept { return rows() == cols(); }
 		constexpr bool empty() const noexcept { return ((cols() == 0) || (rows() == 0)); }
 
+		const_reference get_elem(size_type row, size_type col) const {
+			auto&& it = *this;
+			auto&& cnt = *cont;
+			auto&& [x, y] = cnt.get_elem_indices(it[row][col]);
+			return cnt.get_elem(x, y);
+		}
+
+		void print() const {
+			size_t precision = 8;
+			const auto m = rows();
+			const auto n = cols();
+
+			std::cout << std::fixed << std::setprecision(precision);
+			auto&& it = *this;
+			for (size_type i = 0; i < m; ++i) {
+				std::cout << "[ ";
+				for (size_type j = 0; j < n; ++j) {
+					std::cout << std::setw(10) << it[i][j];
+					if (j + 1 < n) std::cout << ' ';
+				}
+				std::cout << " ]" << std::endl;
+			}
+			std::cout << std::endl;
+		}
+
 	public:
 		constexpr std::pair<size_type, size_type> get_indices(const_reference elem) const noexcept {
 			auto&& mtx = *cont;
 			auto&& elem_ptr = std::addressof(elem);
-#if 0
+#if 1
 			if (elem_ptr < first || elem_ptr > last) {
 				throw std::out_of_range("Element not in submatrix");
 			}
 #endif
 			auto&& [elem_row, elem_col] = mtx.get_elem_indices(elem);
-			// auto = cont->get_elem_col_index(elem);
 			auto&& fst = *first;
 			auto&& [first_row, first_col] = mtx.get_elem_indices(fst);
-			// auto  = cont->get_elem_col_index(*first);
 			return { elem_row - first_row, elem_col - first_col };
 		}
 
@@ -1238,6 +1293,48 @@ struct const_Submatrix { // : std::ranges::view_interface<const_Submatrix<Cont>>
 		[[nodiscard]] constexpr const_col_proxy get_elem_col(const_reference elem) const noexcept {
 			auto [_, сcol] = get_indices(elem);
 			return col(сcol);
+		}
+#if 0
+	public:
+		template<typename value_type_, typename allocator_type_ = std::allocator<value_type>>
+		auto get_matrix(const allocator_type_& allocator = {}) const {
+			using new_cont = rebind_container_t<Cont, value_type_, allocator_type_>;
+			auto&& it = *this;
+			const auto r = it.rows();
+			const auto c = it.cols();
+			new_cont mtx(r, c, allocator);
+			for (size_type i = 0; i < r; ++i) {
+				auto&& it_row = it.row(i);
+				auto&& mtx_row = mtx.row(i);
+				for (size_type j = 0; j < c; ++j) {
+					mtx_row[j] = it_row[j];
+				}
+			}
+			return std::move(mtx);
+		}
+#endif
+	public:
+		const_Submatrix<Cont> get_submatrix(size_type fr, size_type fc, size_type lr, size_type lc) const {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(it[fr][fc], it[lr][lc]);
+		}
+
+		const_Submatrix<Cont> get_submatrix(const value_type& fe, const value_type& le) const {
+			auto&& cnt = *cont;
+			return cnt.get_submatrix(fe, le);
+		}
+
+		const_Submatrix<Cont> get_submatrix(size_type fr, size_type fc, const value_type& le) const {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(it[fr][fc], le);
+		}
+
+		const_Submatrix<Cont> get_submatrix(const value_type& fe, size_type lr, size_type lc) const {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(fe, it[lr][lc]);
 		}
 
 	public:
@@ -1371,6 +1468,8 @@ struct Submatrix : public const_Submatrix<Cont> {
 		using typename base_t::reference;
 		using typename base_t::const_reference;
 
+		using typename base_t::allocator_type;
+
 	public:
 #if 0
 		using iterator = submatrix_default_iterator<Cont>;
@@ -1416,6 +1515,63 @@ struct Submatrix : public const_Submatrix<Cont> {
 		using base_t::size;
 		using base_t::empty;
 		using base_t::is_square;
+
+	public:
+		
+		template<typename value_type_, typename allocator_type_ = std::allocator<value_type>>
+		auto get_matrix(const allocator_type_& allocator = {}) {
+			using new_cont = rebind_container_t<Cont, value_type_, allocator_type_>;
+			auto&& it = *this;
+			const auto r = it.rows();
+			const auto c = it.cols();
+			new_cont mtx(r, c, allocator);
+			for (size_type i = 0; i < r; ++i) {
+				auto&& it_row = it.row(i);
+				auto&& mtx_row = mtx.row(i);
+				for (size_type j = 0; j < c; ++j) {
+					mtx_row[j] = it_row[j];
+				}
+			}
+			return std::move(mtx);
+		}
+	public:
+		Submatrix<Cont> get_submatrix(size_type fr, size_type fc, size_type lr, size_type lc) {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(it[fr][fc], it[lr][lc]);
+		}
+
+		Submatrix<Cont> get_submatrix(const value_type& fe, const value_type& le) {
+			auto&& cnt = *cont;
+			return cnt.get_submatrix(fe, le);
+		}
+
+		Submatrix<Cont> get_submatrix(size_type fr, size_type fc, const value_type& le) {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(it[fr][fc], le);
+		}
+
+		Submatrix<Cont> get_submatrix(const value_type& fe, size_type lr, size_type lc) {
+			auto&& cnt = *cont;
+			auto&& it = *this;
+			return cnt.get_submatrix(fe, it[lr][lc]);
+		}
+
+	public:
+		reference get_elem(size_type row, size_type col) {
+			auto&& it = *this;
+			auto&& cnt = *cont;
+			auto&& [x, y] = cnt.get_elem_indices(it[row][col]);
+			return cnt.get_elem(x, y);
+		}
+
+		const_reference get_elem(size_type row, size_type col) const {
+			auto&& it = *this;
+			auto&& cnt = *cont;
+			auto&& [x, y] = cnt.get_elem_indices(it[row][col]);
+			return cnt.get_elem(x, y);
+		}
 
 	public:
 		constexpr std::pair<size_type, size_type> get_indices(const_reference elem) const noexcept {
@@ -1596,12 +1752,12 @@ struct Submatrix : public const_Submatrix<Cont> {
 // static_assert(std::ranges::view<Submatrix<detail::tCont>>);
 template<typename T> constexpr auto maybe_null(T ptr) { return ptr ? std::addressof(*ptr) : nullptr; }
 
-template<typename allocator_type, typename value_type> using rebound_allocator = typename std::allocator_traits<allocator_type>::template rebind_alloc<value_type>;
+template<typename allocator_type, typename value_type> using rebind_allocator = typename std::allocator_traits<allocator_type>::template rebind_alloc<value_type>;
 
-template<detail::object T, typename Alloc = std::allocator<T>>
+template<typename T, typename Alloc = std::pmr::polymorphic_allocator<T>>
 struct Matrix {
 	public:
-		using allocator_type = rebound_allocator<Alloc, T>;
+		using allocator_type = rebind_allocator<Alloc, T>;
 		using allocator_traits = std::allocator_traits<allocator_type>;
 
 	public:
@@ -1613,12 +1769,12 @@ struct Matrix {
 		using reference = value_type&;
 		using const_reference = const value_type&;
 
-	private:
+	protected:
 		using base = Matrix<value_type, allocator_type>;
 
 	public:
 		using submatrix = Submatrix<base>;
-		using const_submatrix = const_Submatrix<base>;
+		using const_submatrix = const_Submatrix<const base>;
 
 	public:
 		using col_proxy = ColProxy<base>;
@@ -1648,39 +1804,46 @@ struct Matrix {
 		using diagonal_const_reverse_iterator = std::reverse_iterator<diagonal_const_iterator>;
 
 	private:
-		void erase() {
-			if (_data) {
-				const auto n = _rows * _cols;
-				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::destroy(_allocator, &_data[i]);
-				}
-				allocator_traits::deallocate(_allocator, _data, n);
-				_data = nullptr;
-			}
-			_cols = 0;
-			_rows = 0;
-		}
-
+		constexpr Matrix(const allocator_type& allocator) : _allocator(allocator) {}
 	public:
-		Matrix(const allocator_type& allocator) : _allocator(allocator) {}
-
-		Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
-			: Matrix(allocator)
+		constexpr Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
+			: Matrix(allocator) 
 		{
 			_rows = rows;
 			_cols = cols;
-			const auto n = _rows * _cols;
+			auto n = rows * cols;
 			if (n > 0) {
 				_data = allocator_traits::allocate(_allocator, n);
 				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::construct(_allocator, &_data[i]);
+					allocator_traits::construct(_allocator, (_data + i));
 				}
 			}	else {
 				_data = nullptr;
 			}
 		}
 
-		Matrix(const Matrix& rhs) : Matrix(rhs.get_allocator()) {
+		template<typename MatrixType>
+		Matrix(const const_Submatrix<MatrixType>& submatrix, const allocator_type& allocator = {}) : Matrix(submatrix.rows(), submatrix.cols(), allocator) {
+			auto&& it = *this;
+			for (size_type i = 0; i < _rows; ++i) {
+				for (size_type j = 0; j < _cols; ++j) {
+					it.get_elem(i, j) = submatrix[i][j];
+				}
+			}
+		}
+
+		template<typename MatrixType>
+		Matrix(const Submatrix<MatrixType>& submatrix, const allocator_type& allocator = {}) : Matrix(submatrix.rows(), submatrix.cols(), allocator) {
+			auto&& it = *this;
+			for (size_type i = 0; i < _rows; ++i) {
+				for (size_type j = 0; j < _cols; ++j) {
+					it.get_elem(i, j) = submatrix[i][j];
+				}
+			}
+		}
+
+#if 1
+		Matrix(const Matrix& rhs) : Matrix(allocator_type{}) {
 			_rows = rhs._rows;
 			_cols = rhs._cols;
 			const auto n = _rows * _cols;
@@ -1709,12 +1872,12 @@ struct Matrix {
 		}
 
 		Matrix(Matrix&& rhs) noexcept : Matrix(rhs.get_allocator()) {
-			std::swap(rhs._data, _data);
-			std::swap(rhs._cols, _cols);
 			std::swap(rhs._rows, _rows);
+			std::swap(rhs._cols, _cols);
+			std::swap(rhs._data, _data);
 		}
 
-		Matrix(Matrix&& rhs, const allocator_type& allocator)
+		Matrix(Matrix&& rhs, const auto& allocator)
 			: Matrix(rhs._rows, rhs._cols, allocator) {
 			if (_data) {
 				std::copy(rhs._data, rhs._data + _rows * _cols, _data);
@@ -1723,23 +1886,81 @@ struct Matrix {
 
 		Matrix& operator=(const Matrix& rhs) {
 			if (&rhs == this) { return *this; }
-			erase();
-			const auto n = rhs._rows * rhs._cols;
-			if (n > 0) {
-				_data = allocator_traits::allocate(_allocator, n);
+			if (rhs.rows() == rows() && rhs.cols() == cols()) {
+				const auto n = _rows * _cols;
 				for (size_type i = 0; i < n; ++i) {
-					allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+					_data[i] = rhs._data[i];
 				}
 			}	else {
-				_data = nullptr;
+				{
+					if (_data) {
+						const auto n = _rows * _cols;
+						for (size_type i = 0; i < n; ++i) {
+							allocator_traits::destroy(_allocator, &_data[i]);
+						}
+						allocator_traits::deallocate(_allocator, _data, n);
+						_data = nullptr;
+					}
+					_cols = 0;
+					_rows = 0;
+				}
+
+				const auto n = rhs.rows() * rhs.cols();
+				if (n > 0) {
+					_data = allocator_traits::allocate(_allocator, n);
+					for (size_type i = 0; i < n; ++i) {
+						allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
+					}
+				} else {
+					_data = nullptr;
+				}
+				_rows = rhs._rows;
+				_cols = rhs._cols;
 			}
-			_rows = rhs._rows;
-			_cols = rhs._cols;
 			return *this;
 		}
 
+		template<typename val_type, typename alloc_type>
+		Matrix& operator=(const Matrix<val_type, alloc_type>& rhs) {
+			auto&& it = *this;
+			if (&rhs == this) { return *this; }
+			if (rhs.rows() == rows() && rhs.cols() == cols()) {
+				const auto n = _rows * _cols;
+				for (size_type i = 0; i < n; ++i) {
+					_data[i] = static_cast<value_type>(rhs._data[i]);
+				}
+			}	else {
+				{
+					if (_data) {
+						const auto n = _rows * _cols;
+						for (size_type i = 0; i < n; ++i) {
+							allocator_traits::destroy(_allocator, &_data[i]);
+						}
+						allocator_traits::deallocate(_allocator, _data, n);
+						_data = nullptr;
+					}
+					_cols = 0;
+					_rows = 0;
+				}
+
+				const auto n = rhs.rows() * rhs.cols();
+				if (n > 0) {
+					_data = allocator_traits::allocate(_allocator, n);
+					for (size_type i = 0; i < n; ++i) {
+						allocator_traits::construct(_allocator, &_data[i], static_cast<value_type>(rhs._data[i]));
+					}
+				}	else {
+					_data = nullptr;
+				}
+				_rows = rhs._rows;
+				_cols = rhs._cols;
+			}
+			return it;
+		}
+
 		Matrix& operator=(Matrix&& rhs) {
-			if (_allocator == rhs.allocator) {
+			if (&rhs == this) { return *this; }
+			if (get_allocator() == rhs.get_allocator()) {
 				std::swap(_data, rhs._data);
 				std::swap(_rows, rhs._rows);
 				std::swap(_cols, rhs._cols);
@@ -1748,20 +1969,29 @@ struct Matrix {
 			}
 			return *this;
 		}
+#endif
+
+		constexpr ~Matrix() {
+			if (_data) {
+				const auto n = _rows * _cols;
+				for (size_type i = 0; i < n; ++i) {
+					allocator_traits::destroy(_allocator, _data + i);
+				}
+				allocator_traits::deallocate(_allocator, _data, n);
+				_data = nullptr;
+			}
+			_cols = 0;
+			_rows = 0;
+		}
 
 	private:
-		constexpr pointer get_elem(size_type r, size_type c) const noexcept {
+		constexpr pointer get_elem_ptr(size_type r, size_type c) const noexcept {
 			return _data + (r * _cols + c);
 		}
 
 	private:
-		constexpr allocator_type& _get_allocator() noexcept {
-			return _allocator;
-		}
-
-		constexpr const allocator_type& _get_allocator() const noexcept {
-			return _allocator;
-		}
+		constexpr allocator_type& _get_allocator() noexcept { return _allocator; }
+		constexpr const allocator_type& _get_allocator() const noexcept {	return _allocator; }
 
 	public:
 		constexpr size_type size() const noexcept { return _rows * _cols; }
@@ -1769,10 +1999,18 @@ struct Matrix {
 		constexpr size_type cols() const noexcept { return _cols; }
 		constexpr bool empty() const noexcept { return ((_rows == 0) || (_cols == 0)); }
 		constexpr bool is_square() const noexcept { return _rows == _cols; }
-		constexpr allocator_type get_allocator() const noexcept {
-			return _get_allocator();
+		constexpr allocator_type get_allocator() const noexcept { return _get_allocator(); }
+
+	public:
+		constexpr const auto& get_elem(size_type r, size_type c) const {
+			auto ptr = get_elem_ptr(r, c);
+			return *ptr;
 		}
 
+		constexpr auto& get_elem(size_type r, size_type c) {
+			auto ptr = get_elem_ptr(r, c);
+			return *ptr;
+		}
 
 		constexpr size_type get_elem_row_index(const value_type& elem) const noexcept {
 			auto x = std::addressof(elem);
@@ -1812,22 +2050,22 @@ struct Matrix {
 
 	public:
 		constexpr submatrix get_submatrix(size_type fr, size_type fc, size_type lr, size_type lc) noexcept {
-			return submatrix(this, get_elem(fr, fc), get_elem(lr, lc));
+			return submatrix(this, get_elem_ptr(fr, fc), get_elem_ptr(lr, lc));
 		}
 
 		constexpr const_submatrix get_submatrix(size_type fr, size_type fc, size_type lr, size_type lc) const noexcept {			
-			return const_submatrix(this, get_elem(fr, fc), get_elem(lr, lc));
+			return const_submatrix(this, get_elem_ptr(fr, fc), get_elem_ptr(lr, lc));
 		}
 
 		constexpr submatrix get_submatrix(const_reference first, const_reference last) noexcept {
 			auto&& [fr, fc] = get_elem_indices(first);
-			auto&& [lr, lc] = get_elem_indices(first);
+			auto&& [lr, lc] = get_elem_indices(last);
 			return get_submatrix(fr, fc, lr, lc);
 		}
 
 		constexpr const_submatrix get_submatrix(const_reference first, const_reference last) const noexcept {
 			auto&& [fr, fc] = get_elem_indices(first);
-			auto&& [lr, lc] = get_elem_indices(first);
+			auto&& [lr, lc] = get_elem_indices(last);
 			return get_submatrix(fr, fc, lr, lc);
 		}
 
@@ -1849,6 +2087,36 @@ struct Matrix {
 		constexpr submatrix get_submatrix(size_type fr, size_type fc, const_reference last) noexcept {
 			auto&& [lr, lc] = get_elem_indices(last);
 			return get_submatrix(fr, fc, lr, lc);
+		}
+
+	public:
+		constexpr void set_submatrix(const value_type& elem, const auto& mtx) {
+			auto&& it = *this;
+			const auto r = mtx.rows();
+			const auto c = mtx.cols();
+
+			const auto [x, y] = get_elem_indices(elem);
+
+#if 0
+			if (x + r > this->rows() || y + c > this->cols()) {
+				throw std::out_of_range("set_submatrix: submatrix does not fit");
+			}
+#endif
+#if 0
+			for (size_t i = 0; i < r; ++i) {
+				for (size_t j = 0; j < c; ++j) {
+					it[x + i][y + j] = mtx[i][j];
+				}
+			}
+#endif
+
+			for (size_t i = 0; i < r; ++i) {
+				auto&& mtx_i_col = mtx.row(i);
+				auto&& it_xpi_col = it.row(x + i);
+				for (size_t j = 0; j < c; ++j) {
+					it_xpi_col[y + j] = mtx_i_col[j];
+				}
+			}
 		}
 
 	public:
@@ -1976,6 +2244,20 @@ struct Matrix {
 		}
 
 	public:
+
+		/* def */
+		[[nodiscard]] constexpr auto def_range() noexcept {
+			return std::ranges::subrange(begin(), end());
+		}
+
+		[[nodiscard]] constexpr auto def_range() const noexcept {
+			return std::ranges::subrange(cbegin(), cend());
+		}
+
+		[[nodiscard]] constexpr auto const_def_range() const noexcept {
+			return std::ranges::subrange(cbegin(), cend());
+		}
+
 		/* row */
 		[[nodiscard]] constexpr auto row_range() noexcept {
 			return std::ranges::subrange(row_begin(), row_end());
@@ -2082,413 +2364,11 @@ struct Matrix {
 			os << std::endl;
 		}
 
-#if 0	
-		template<typename AllocR = allocator_type>
-		auto get_row_as_vector(size_type x) const {
-			auto&& it = *this;
-			auto r = it[x];
-			return std::vector<value_type, AllocR>(r.begin(), r.end());
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_row_as_matrix_row(size_type x) const {
-			auto&& it = *this;
-			auto r = it[x];
-			auto result = Matrix<value_type, AllocR>(1, it.cols());
-			for (size_type i = 0; i < it.cols(); ++i) {
-				result[0][i] = r[i];
-			}
-			return result;
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_row_as_matrix_col(size_type x) const {
-			auto&& it = *this;
-			auto r = it[x];
-			auto result = Matrix<value_type, AllocR>(it.cols(), 1);
-			for (size_type i = 0; i < it.cols(); ++i) {
-				result[i][0] = r[i];
-			}
-			return result;
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_col_as_vector(size_type x) const {
-			auto&& it = *this;
-			auto c = it.col(x);
-			return std::vector<value_type, AllocR>(c.begin(), c.end());
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_col_as_matrix_row(size_type x) const {
-			auto&& it = *this;
-			auto c = it.col(x);
-			auto result = Matrix<value_type, AllocR>(1, it.rows());
-			for (size_type i = 0; i < it.rows(); ++i) {
-				result[0][i] = c[i];
-			}
-			return result;
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_col_as_matrix_col(size_type x) const {
-			auto&& it = *this;
-			auto c = it.col(x);
-			auto result = Matrix<value_type, AllocR>(it.rows(), 1);
-			for (size_type i = 0; i < it.rows(); ++i) {
-				result[i][0] = c[i];
-			}
-			return result;
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_submatrix(
-			size_type from_x,
-			size_type from_y,
-			size_type to_x,
-			size_type to_y
-		) const {
-#if 0
-			if (from_x >= _rows || from_y >= _cols || to_x >= _rows || to_y >= _cols) {
-				throw std::out_of_range("Submatrix indices out of range");
-			}
-
-			if (from_x > to_x || from_y > to_y) {
-				throw std::invalid_argument("Invalid submatrix range: from indices must be <= to indices");
-			}
-#endif
-			auto&& it = *this;
-			const auto N = to_x - from_x + 1;
-			const auto M = to_y - from_y + 1;
-
-			auto result = Matrix<value_type, AllocR>(N, M);
-
-			for (size_type i = 0; i < N; ++i) {
-				for (size_type j = 0; j < M; ++j) {
-					result[i][j] = it[from_x + i][from_y + j];
-				}
-			}
-
-			return result;
-		}
-
-		template<typename AllocR = allocator_type>
-		auto get_submatrix(const value_type& from_elem, const value_type& to_elem) const {
-			auto&& [from_x, from_y] = get_indices(from_elem);
-			auto&& [to_x, to_y] = get_indices(to_elem);
-			return get_submatrix<AllocR>(from_x, from_y, to_x, to_y);
-		}
-#endif
-
-		void set_submatrix(size_type to_x, size_type to_y, const Matrix<value_type>& A) {
-			auto&& it = *this;
-#if 0
-			if (to_x >= it.rows() || to_y >= it.cols()) {
-				throw std::out_of_range("set_submatrix: starting indices out of range");
-			}
-
-			if (to_x + A.rows() > it.rows() || to_y + A.cols() > it.cols()) {
-				throw std::runtime_error("set_submatrix: submatrix does not fit in target matrix");
-			}
-#else
-		//	static_assert(to_x >= it.rows() || to_y >= it.cols());
-		//	static_assert(to_x + A.rows() > it.rows() || to_y + A.cols() > it.cols());
-#endif
-			
-			for (size_type i = 0; i < A.rows(); ++i) {
-				for (size_type j = 0; j < A.cols(); ++j) {
-					it[to_x + i][to_y + j] = A[i][j];
-				}
-			}
-		}
-
-	public:
-		Matrix transpose() const {
-			auto&& it = *this;
-			Matrix result(_cols, _rows);
-			for (size_type i = 0; i < _rows; ++i) {
-				auto&& rci = result.col(i);
-				auto&& iri = it.row(i);
-				for (size_type j = 0; j < _cols; ++j) {
-					rci[j] = iri[j];
-				}
-			}
-			return result;
-		}
-
-	public:
-
-		template<typename U>
-		constexpr auto operator*(const Matrix<U>& other) const noexcept
-			-> Matrix<std::common_type_t<value_type, U>>  {
-			return mult(*this, other);
-		}
-
-		template<typename U, typename Alloc_ = std::allocator<std::common_type_t<value_type, U>>>
-		constexpr Matrix& operator*=(const Matrix<U>& other) {
-			auto&& it = *this;
-			if (cols() != other.rows()) {
-				throw std::runtime_error("Matrix dimensions do not match for multiplication");
-			}
-			using ResultType = std::common_type_t<value_type, U>;
-			it = mult<value_type, U, ResultType, Alloc_>(*this, other);
-			return it;
-		}
-
-		// Scalar multiplication (matrix * scalar)
-		template<typename U>
-		auto operator*(U scalar) const noexcept
-			-> Matrix<std::common_type_t<T, U>> {
-			auto&& it = *this;
-			using ResultType = std::common_type_t<T, U>;
-			auto result = it;
-
-			std::ranges::for_each(result, [&scalar](auto&& it) {
-				it *= scalar;
-			});
-
-			return result;
-		}
-
-		template<typename U>
-		constexpr Matrix& operator*=(const U& scalar) {
-			auto&& it = *this;
-			std::ranges::for_each(it, [&scalar](auto&& it) {
-				it *= scalar;
-			});
-			return *this;
-		}
-
-		template<typename U>
-		auto operator/(U scalar) const -> Matrix<std::common_type_t<T, U>> {
-			using ResultType = std::common_type_t<T, U>;
-			if (scalar == U{0}) { throw std::runtime_error("Division by zero"); }
-			auto result = Matrix<ResultType>(_rows, _cols);
-			auto rb = result.begin();
-			auto re = result.end();
-			auto ib = begin();
-
-			for (; rb != re; ++rb, ++ib) {
-				*rb = *ib / scalar;
-			}
-		
-			return result;
-		}
-	
-		template<typename U>
-		Matrix& operator/=(U scalar) {
-			if (scalar == U{0}) { throw std::runtime_error("Division by zero"); }
-			auto&& it_ = *this;
-			std::ranges::for_each(it_, [&scalar](auto&& it) {
-				it /= scalar;
-			});
-			return *this;
-		}
-
-		template<typename U>
-		auto operator+(const Matrix<U>& other) const -> Matrix<std::common_type_t<T, U>> {
-			if (_rows != other.rows() || _cols != other.cols()) {
-				throw std::runtime_error("Matrix dimensions do not match for addition");
-			}
-			auto&& it = *this;
-			
-			using ResultType = std::common_type_t<T, U>;
-			auto result = Matrix<ResultType>(_rows, _cols);
-
-			auto rb = result.begin();
-			auto re = result.end();
-			auto ib = it.cbegin();
-			auto ob = other.cbegin();
-
-			for (; rb != re; ++rb, ++ib, ++ob) {
-				*rb = (*ib) + (*ob);
-			}
-			
-			return result;
-		}
-
-		template<typename U>
-		auto operator-(const Matrix<U>& other) const -> Matrix<std::common_type_t<T, U>> {
-			if (_rows != other.rows() || _cols != other.cols()) {
-				throw std::runtime_error("Matrix dimensions do not match for subtraction");
-			}
-
-			auto&& it = *this;
-
-			using ResultType = std::common_type_t<T, U>;
-			auto result = Matrix<ResultType>(_rows, _cols);
-
-			auto rb = result.begin();
-			auto re = result.end();
-			auto ib = it.cbegin();
-			auto ob = other.cbegin();
-
-			for (; rb != re; ++rb, ++ib, ++ob) {
-				*rb = (*ib) - (*ob);
-			}
-
-			return result;
-		}
-
-		Matrix operator+() const { return *this; }
-
-		Matrix operator-() const {
-			Matrix result(_rows, _cols);
-			auto rb = result.begin();
-			auto re = result.end();
-			auto ib = cbegin();
-		
-			for (; rb != re; ++rb, ++ib) {
-				*rb = -(*ib);
-			}
-		
-			return result;
-		}
-
-		Matrix& operator+=(const Matrix& other) {
-			if (_rows != other._rows || _cols != other._cols) {
-				throw std::runtime_error("Matrix dimensions do not match for addition");
-			}
-
-			auto ib = begin();
-			auto ie = end();
-			auto ob = other.cbegin();
-			for (; ib != ie; ++ib, ++ob) {
-				*ib += *ob;
-			}
-
-			return *this;
-		}
-
-		Matrix& operator-=(const Matrix& other) {
-			if (_rows != other._rows || _cols != other._cols) {
-				throw std::runtime_error("Matrix dimensions do not match for subtraction");
-			}
-
-			auto ib = begin();
-			auto ie = end();
-			auto ob = other.cbegin();
-			for (; ib != ie; ++ib, ++ob) {
-				*ib -= *ob;
-			}
-
-			return *this;
-		}
-
 	private:
+		allocator_type _allocator = {};
 		size_type _rows = 0;
 		size_type _cols = 0;
-		allocator_type _allocator = allocator_type();
 		pointer _data = nullptr;
 };
-
-template<typename T, typename U, typename allocator_type>
-auto operator*(U scalar, const Matrix<T, allocator_type>& matrix) -> Matrix<std::common_type_t<T, U>> {
-	return matrix * scalar;
-}
-
-
-#if 0
-template<typename T, typename allocator_type>
-Matrix<T> operator/(const Matrix<T, allocator_type>& B, const Matrix<T, allocator_type>& A) {
-	if (A.rows() != A.cols()) {
-		throw std::runtime_error("Matrix A must be square for division");
-	}
-	if (A.rows() != B.rows()) {
-		throw std::runtime_error("Matrix dimensions do not match for division");
-	}
-
-	auto A_inv = A.inverse();
-	return A_inv * B;
-}
-#endif
-
-#if 0
-constexpr auto to_Matrix_col(std::ranges::range auto&& range) {
-	using value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(range)>>;
-	auto result = Matrix<value_type>(std::ranges::size(range), 1);
-	std::ranges::copy(range, result.col(0).begin());
-	return result;
-}
-
-constexpr auto to_Matrix_row(std::ranges::range auto&& range) {
-	using value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(range)>>;
-	auto result = Matrix<value_type>(std::ranges::size(range), 1);
-	std::ranges::copy(range, result.row(0).begin());
-	return result;
-}
-
-template<typename T, typename allocator_type = std::allocator<T>>
-struct OneColMatrix : public Matrix<T, allocator_type> {
-	using base_t = typename Matrix<T, allocator_type>;
-	OneColMatrix(std::ranges::range auto&& range) : base_t(to_Matrix_col(range)) {};
-};
-
-template<typename T, typename allocator_type = std::allocator<T>>
-struct OneRowMatrix : public Matrix<T, allocator_type> {
-	using base_t = typename Matrix<T, allocator_type>;
-	OneRowMatrix(std::ranges::range auto&& range) : base_t(to_Matrix_row(range)) {};
-};
-#endif
-
-template<typename T, typename U>
-constexpr auto dummy_mult(const Matrix<T>& A, const Matrix<U>& B )
-	-> Matrix<std::common_type_t<T, U>>
-{
-	using ResultType = std::common_type_t<T, U>;
-	if (A.cols() != B.rows()) {
-		throw std::runtime_error("Matrix dimensions do not match for multiplication");
-	}
-	using size_type = size_t;
-	auto result = Matrix<ResultType>(A.rows(), B.cols());
-
-	for (size_type i = 0; i < A.rows(); ++i) {
-		for (size_type j = 0; j < B.cols(); ++j) {
-			ResultType sum = ResultType{};
-			for (size_type k = 0; k < A.cols(); ++k) {
-				sum += A[i][k] * B[k][j];
-			}
-			result[i][j] = sum;
-		}
-	}
-
-	return result;
-}
-
-template<typename T, typename U, typename W>
-constexpr void mult_(const Matrix<T>& A, const Matrix<U>& B, Matrix<W>& C) noexcept {
-	using size_type = typename Matrix<T>::size_type;
-	const auto M = A.rows(); // C.rows()
-	const auto N = B.cols(); // C.cols()
-	const auto K = A.cols();
-
-	for (size_type i = 0; i < N; ++i) {
-		auto&& c = C.col(i);
-		auto&& Bci = B.col(i);
-		for (size_type j = 0; j < K; ++j) {
-			auto&& a_col = A.col(j);
-			auto&& b_val = Bci[j];
-			for (size_type k = 0; k < M; ++k) {
-				c[k] += a_col[k] * b_val;
-			}
-		}
-	}
-}
-
-template<
-	typename T,
-	typename U,
-	typename W = typename std::common_type_t<T, U>,
-	typename Alloc = std::allocator<W>
->
-constexpr auto mult(const Matrix<T>& A, const Matrix<U>& B) noexcept
-	-> Matrix<W, Alloc>
-{
-	const auto M = A.rows();
-	const auto N = B.cols();
-	auto C = Matrix<W, Alloc>(M, N);
-	mult_<T, U, W>(A, B, C);
-	return C;
-}
 
 #endif

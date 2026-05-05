@@ -6,5 +6,5 @@ add_executable(
 	"${CMAKE_CURRENT_LIST_DIR}/main.hpp"
 )
 
-target_link_libraries(Matrix_test PRIVATE Matrix MatrixHelpers)
+target_link_libraries(Matrix_test PRIVATE MatrixHelpers)
 

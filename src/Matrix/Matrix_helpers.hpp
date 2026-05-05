@@ -1,12 +1,71 @@
-﻿#pragma once
-#ifndef MATRIX_HELPERS_HPP
+﻿#ifndef MATRIX_HELPERS_HPP
 #define MATRIX_HELPERS_HPP
+#pragma once
 
-#include "Matrix.hpp"
+#include "MathMatrix.hpp"
 
 #include <numeric>
+#include <random>
+#include <functional>
+#include <exception>
+
+using namespace math_matrix;
 
 void helpers_tests();
+
+namespace test_utils {
+	using value_type = long double;
+	using size_type = size_t;
+
+	template<typename T> using distribution = std::conditional_t<
+		std::floating_point<T>,
+		std::uniform_real_distribution<T>,
+		std::uniform_int_distribution<T>
+	>;
+
+	// template<std::ranges::input_range T> using range_val = std::ranges::value_type_t<>;
+
+	static auto mt = std::mt19937(std::random_device{}());
+
+	template<typename T>
+	inline auto gen(T min, T max) {
+		auto dist = distribution<T>(min, max);
+		return std::invoke(dist, mt);
+	};
+
+	template<std::ranges::input_range R, std::same_as<std::ranges::range_value_t<R>> T>
+	void fill_matrix(R&& r, T min = (-1000.0L), T max = (1000.0L)) {
+		std::ranges::generate(r, [min, max]() { return gen(min, max); });
+	}
+
+	template<auto V> struct End {
+		inline constexpr bool operator==(auto&& x) const { return *x == V; }
+	};
+
+	template<typename Func, typename Value> concept _projector = std::is_same_v<std::invoke_result_t<Func, Value>, std::add_rvalue_reference_t<Value>>;
+	template<typename Func, typename It> concept projector = _projector<Func, typename std::iterator_traits<It>::value_type>;
+	template<
+		std::input_iterator ItFst,
+		std::sentinel_for<ItFst> S,
+		std::input_iterator ItSnd,
+		std::predicate<ItFst, ItSnd> Pred,
+		projector<ItFst> ProjFst,
+		projector<ItSnd> ProjSnd
+	>
+	bool equal(ItFst fb, S fe, ItSnd sb, Pred&& pred, ProjFst&& proj_fst = std::identity{}, ProjSnd&& proj_snd = std::identity{}) {
+		for (; fb != fe; ++fb, ++sb) {
+			if (!(
+				std::invoke(
+					pred,
+					std::invoke(proj_fst, *fb),
+					std::invoke(proj_snd, *sb)
+				)
+				)) return false;
+		}
+		return true;
+	};
+
+}
 
 namespace utils {
 	template<typename T> concept custom_complex = requires (T a) { { a.real }; { a.imag }; };
@@ -32,19 +91,28 @@ namespace utils {
 	template<typename Range> concept arithmetic_input_range = std::ranges::input_range<Range> && arithmetic<typename std::ranges::iterator_t<Range>::value_type>;
 	template<typename Range> concept complex_input_range = std::ranges::input_range<Range> && complex<typename std::ranges::iterator_t<Range>::value_type>;
 
-	template<typename T, typename Alloc = std::allocator<std::complex<T>>>
-	constexpr Matrix<std::complex<T>, Alloc> to_complex(const Matrix<T>& A) {
-		auto cm = Matrix<std::complex<T>, Alloc>(A.rows(), A.cols());
+	inline auto to_complex(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = std::decay_t<decltype(allocator)>;
+		using result_value_type = std::complex<value_type>;
+		using result_allocator_type = rebind_allocator<allocator_type, result_value_type>;
+		using result_matrix = rebind_container_t<matrix, result_value_type, result_allocator_type>;
+		result_matrix cm(A.rows(), A.cols(), allocator);
 		std::ranges::copy(A, cm.begin());
 		return cm;
+	}
+
+	inline auto to_complex(const MatrixLike auto& A) {
+		return to_complex(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
 	constexpr auto pow(auto base, auto exp) {
 		return std::pow(base, exp);
 	}
 
-	constexpr auto sqrt(auto val) {
-		return std::sqrt(val);
+	constexpr auto sqrt(auto&& val) {
+		return std::sqrt(std::forward<std::decay_t<decltype(val)>>(val));
 	}
 
 #if 0
@@ -71,27 +139,60 @@ namespace utils {
 }
 
 namespace helpers {
-	// O(N)
-#if 0
-	template<utils::arithmetic T, typename Alloc = std::allocator<T>>
-#else
-	template<typename T, typename Alloc = std::allocator<T>>
-#endif
-	constexpr auto identity(size_t n) -> Matrix<T, Alloc> {
-		auto result = Matrix<T, Alloc>(n, n);
-		constexpr auto one = static_cast<T>(1);
-		std::ranges::for_each(result.diagonal_range(), [one](auto&& it) {it = one; });
+
+	constexpr void transpose_(const MatrixLike auto& A, MatrixLike auto& result) {
+		const auto rows = A.rows();
+		const auto cols = A.cols();
+		using size_type = std::size_t;
+
+		for (size_type i = 0; i < rows; ++i) {
+			auto&& rci = result.col(i);
+			auto&& ari = A.row(i);
+			for (size_type j = 0; j < cols; ++j) {
+				rci[j] = ari[j];
+			}
+		}
+	}
+
+	inline auto transpose(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+		using value_type = std::decay_t<decltype(A)>::value_type;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		const auto r = A.rows();
+		const auto c = A.cols();
+		Matrix<value_type, allocator_type> result(c, r, allocator);
+		transpose_(A, result);
 		return result;
 	}
 
-	// O(N)
-	constexpr auto sum(std::ranges::input_range auto&& r) {
+	inline auto transpose(const MatrixLike auto& A) {
+		return transpose(A, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	constexpr void identity_(auto& mtx) {
+		using value_type = std::decay_t<decltype(mtx)>::value_type;
+		constexpr auto one = static_cast<value_type>(1);
+		std::ranges::for_each(mtx.diagonal_range(), [one](auto&& it) { it = one; });
+	}
+
+	template<typename value_type>
+	inline auto identity(size_t n, const AllocatorLike auto& allocator) {
+		using Alloc = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		Matrix<value_type, Alloc> result(n, n, allocator);
+		identity_(result);
+		return result;
+	}
+
+	template<typename value_type>
+	inline auto identity(size_t n) {
+		return identity<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	constexpr auto sum(std::ranges::forward_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
 		return std::accumulate(r.begin(), r.end(), static_cast<value_type>(0));
 	}
 
-	// O(N)
-	constexpr auto abs_sum(std::ranges::input_range auto&& r) {
+	constexpr auto abs_sum(std::ranges::forward_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
 		auto sum = std::accumulate(r.begin(), r.end(),
 			static_cast<value_type>(0),
@@ -103,7 +204,6 @@ namespace helpers {
 		return sum;
 	}
 
-	// O(N)
 	constexpr auto& max(utils::arithmetic_input_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
 		auto max_val = &(*r.begin());
@@ -113,20 +213,27 @@ namespace helpers {
 		return *max_val;
 	}
 
-	template<utils::arithmetic value_type>
-	constexpr void scale_matrix_self(Matrix<value_type>& A) {
+	constexpr void scale_matrix_self(MatrixLike auto& A) {
+		using mtx = std::decay_t<decltype(A)>;
+		using value_type = mtx::value_type;
 		constexpr auto zero = static_cast<value_type>(0);
 		constexpr auto one = static_cast<value_type>(1);
-		auto max_val = max(A);
+		auto max_val = max(A.def_range());
 		auto scale = one / max_val;
-		A *= scale;
+		A = A * scale;
 	}
 
-	template<utils::arithmetic value_type, typename Alloc = std::allocator<value_type>>
-	constexpr Matrix<value_type, Alloc> scale_matrix(const Matrix<value_type>& A) {
-		auto B = A;
+	inline auto scale_matrix(const MatrixLike auto& A, const auto& allocator) {
+		using value_type = std::decay_t<decltype(A)>::value_type;
+		using alloc = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		Matrix<value_type, alloc> B(A, allocator);
 		scale_matrix_self(B);
 		return B;
+	}
+
+	inline auto scale_matrix(const MatrixLike auto& A) {
+		using alloc = std::decay_t<decltype(A)>::allocator_type;
+		return scale_matrix(A, alloc{});
 	}
 
 	// return non-abs val&
@@ -140,15 +247,25 @@ namespace helpers {
 		return *max_val;
 	}
 
-	// O(N)
-	constexpr auto euclid_norm(utils::arithmetic_input_range auto&& r) {
+	constexpr auto euclid_norm(std::ranges::forward_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
-		auto acc = static_cast<value_type>(0);
-		std::ranges::for_each(r, [&acc](auto&& it) { acc += it * it; });
-		return utils::sqrt<value_type>(acc);
+		if constexpr (ComplexLike<value_type>) {
+			using T = value_type::value_type;
+			constexpr auto zero = T(0);
+			auto acc = zero;
+			std::ranges::for_each(r, [&acc](auto&& it) {
+				const auto t = std::abs(it);
+				acc += t * t;
+			});
+			return utils::sqrt(acc);
+		} else {
+			auto acc = static_cast<value_type>(0);
+			std::ranges::for_each(r, [&acc](auto&& it) { acc += it * it; });
+			return utils::sqrt(acc);
+		}
 	}
-
-	constexpr auto euclid_norm(utils::complex_input_range auto&& r) {
+#if 0
+	constexpr auto euclid_norm(std::ranges::forward_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>::value_type;
 		auto acc = static_cast<value_type>(0);
 		std::ranges::for_each(r, [&acc](auto&& it) {
@@ -157,13 +274,74 @@ namespace helpers {
 		});
 		return utils::sqrt<value_type>(acc);
 	}
+#endif
+
+	auto inverse(const MatrixLike auto& A) {
+		using value_type = std::decay_t<decltype(A)>::value_type;
+
+		auto X = identity<value_type>(A.rows());
+		auto tmp = A;
+
+		auto add_scaled_row = [](auto&& fst, auto&& snd, auto scale) {
+			auto&& f_b = fst.begin();
+			auto&& f_e = fst.end();
+			auto&& s_b = snd.begin();
+
+			for (; f_b != f_e; ++f_b, ++s_b) {
+				auto&& elem1 = *f_b;
+				auto&& elem2 = *s_b;
+				elem1 -= elem2 * scale;
+			}
+		};
+
+		for (auto&& diag_elem : tmp.diagonal_range()) {
+			auto&& [elem_row_idx, elem_col_idx] = tmp.get_elem_indices(diag_elem);
+
+			auto&& elem_col = tmp.col(elem_col_idx);
+			auto&& elem_row = tmp.row(elem_row_idx);
+
+			auto&& under_sub = std::ranges::subrange(elem_col.begin() + elem_col_idx, elem_col.end());
+			auto&& max_val = max_abs(under_sub);
+
+			auto&& [max_val_row_idx, max_val_col_idx ] = tmp.get_elem_indices(max_val);
+			auto&& max_val_row = tmp.row(max_val_row_idx);
+
+			if (elem_row_idx != max_val_row_idx) {
+				utils::swap_r(tmp.row(elem_row_idx), tmp.row(max_val_row_idx));
+				utils::swap_r(X.row(elem_row_idx), X.row(max_val_row_idx));
+			}
+
+			auto norm = 1 / diag_elem;
+			auto&& x_row = X.row(elem_row_idx);
+			auto&& tmp_row = tmp.row(elem_row_idx);
+			auto func = [norm](auto&& it) { it *= norm; };
+			std::ranges::for_each(x_row, func);
+			std::ranges::for_each(tmp_row, func);
+
+			for (size_t i = 0; i < X.rows(); ++i) {
+				if (i == elem_col_idx) { continue; }
+				auto factor = tmp[i][elem_col_idx];
+				add_scaled_row(X.row(i), x_row, factor);
+				add_scaled_row(tmp.row(i), tmp_row, factor);
+			}
+		}
+
+		return tmp; //std::make_pair(tmp, X);
+	}
 	
-	template<utils::arithmetic T, typename Alloc = std::allocator<T>>
-	constexpr auto matrix_euclid_col_norm(const Matrix<T>& A) {
-		auto x = std::vector<T, Alloc>();
+	inline auto matrix_euclid_col_norm(const MatrixLike auto& A, const auto& alloc) {
+		using mtx = std::decay_t<decltype(A)>;
+		using value_type = mtx::value_type;
+		using allocator = std::decay_t<decltype(alloc)>;
+		using reb_alloc = rebind_allocator<allocator, value_type>;
+		std::vector<value_type, reb_alloc> x(alloc);
 		x.reserve(A.cols());
 		std::ranges::for_each(A.col_range(), [&x](auto&& it) { x.push_back(euclid_norm(it)); });
 		return x;
+	}
+
+	inline auto matrix_euclid_col_norm(const MatrixLike auto& A) {
+		return matrix_euclid_col_norm(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
 	template<utils::complex T, typename Alloc = std::allocator<typename T::value_type>>
@@ -175,7 +353,6 @@ namespace helpers {
 		return x;
 	}
 
-	// O(N)
 	template<typename T>
 	constexpr auto matrix_euclid_max_col_norm(const Matrix<T>& A) {
 		if constexpr (utils::complex<T>) {
@@ -194,13 +371,11 @@ namespace helpers {
 		}
 	}
 
-	// O(N)
 	constexpr auto manhattan_norm(std::ranges::input_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
 		return abs_sum(r);
 	}
 
-	// O(N)
 	constexpr auto lp_norm(std::ranges::input_range auto&& cnt, utils::arithmetic auto exp) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		constexpr const auto zero = static_cast<value_type>(0);
@@ -214,10 +389,8 @@ namespace helpers {
 		return utils::pow(fst, snd);
 	}
 
-	// O(N)
 	constexpr auto infinity_norm(std::ranges::input_range auto&& r) { return max(r); }
 
-	// O(N)
 	constexpr auto mean(const utils::Container auto& cnt) {
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
 		const auto s = cnt.size();
@@ -225,7 +398,6 @@ namespace helpers {
 		return (sum_ / static_cast<value_type>(s));
 	}
 
-	// O(N)
 	constexpr auto abs_mean(const utils::Container auto& cnt) {
 		const auto s = cnt.size();
 		using value_type = typename std::decay_t<decltype(cnt)>::value_type;
@@ -233,8 +405,6 @@ namespace helpers {
 		return acc / static_cast<value_type>(s);
 	}
 
-	// O(2N)
-	// is sized range?
 	constexpr auto variance(std::ranges::input_range auto&& r) {
 		const auto m = mean(r);
 		const auto rmo = static_cast<decltype(m)>(r.size() - 1);
@@ -247,18 +417,15 @@ namespace helpers {
 		return acc / rmo;
 	}
 
-	// O(2N)
 	constexpr auto standard_deviation(std::ranges::input_range auto&& r) {
 		return utils::sqrt(variance(r));
 	}
 
-	// O(N)
 	template<typename T>
 	constexpr auto trace(const Matrix<T>& A) {
 		return sum(A.diagonal_range());
 	}
 
-	// O(N)
 	template<typename T, typename Alloc = std::allocator<T>>
 	constexpr std::vector<T, Alloc> col_means(const Matrix<T>& A) {
 		auto x = A.col_range()
@@ -279,77 +446,143 @@ namespace helpers {
 		return x;
 	}
 
+	static constexpr void calc_m_(
+		std::ranges::input_range auto&& c,
+		std::ranges::input_range auto&& result
+	) {
+		auto sub = std::ranges::subrange(c.begin() + 1, c.end());
+		const auto x = *c.begin();
+		for (size_t i = 0; i < sub.size(); ++i) {
+			result[i] = sub[i] / x;
+		}
+	}
 
-	template<typename T>
-	static constexpr auto determinant_impl(const Matrix<T>& A) {
+	template<typename Alloc_ = std::pmr::polymorphic_allocator<std::byte>>
+	static inline auto calc_m(
+		std::ranges::input_range auto&& c,
+		const Alloc_& allocator = {}
+	) {
+		using value_type = std::ranges::range_value_t<decltype(c)>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		std::vector<value_type, allocator_type> res(c.size() - 1, allocator);
+		calc_m_(c, res);
+		return res;
+	}
+
+	static constexpr void row_substruction_(
+		std::ranges::input_range auto&& fst,
+		std::ranges::input_range auto&& snd,
+		utils::arithmetic auto m,
+		std::ranges::input_range auto&& res
+	) {
+		auto f_b = fst.begin();
+		auto s_b = snd.begin();
+		for (auto&& elem : res) {
+			auto& fb = *f_b;
+			auto& sb = *s_b;
+			elem = sb - (fb * m);
+			++f_b;
+			++s_b;
+		}
+	}
+
+	static inline auto row_substruction(
+		std::ranges::input_range auto&& fst,
+		std::ranges::input_range auto&& snd,
+		utils::arithmetic auto m,
+		const auto& alloc
+	) {
+		using value_type = std::ranges::range_value_t<decltype(fst)>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(alloc)>, value_type>;
+		std::vector<value_type, allocator_type> res(fst.size(), alloc);
+		row_substruction_(fst, snd, m, res);
+		return res;
+	}
+
+	static inline auto row_substruction(
+		std::ranges::input_range auto&& fst,
+		std::ranges::input_range auto&& snd,
+		utils::arithmetic auto m) {
+		return row_substruction(fst, snd, m, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	static constexpr auto determinant_impl(const MatrixLike auto& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
-#if 0
-		constexpr auto eps = std::numeric_limits<value_type>::epsilon();
 
-		auto temp = A;
-		auto det = static_cast<value_type>(1);
-		const auto r = temp.rows();
+		auto B = A;
 
-#if 0
-		for (size_type k = 0; k < r; ++k) {
-			auto tck = temp.col(k);
-			auto trk = temp.row(k);
-			auto tck_r = std::ranges::subrange(tck.begin() + k, tck.end());
-			auto&& max_row = temp.get_elem_row(max_abs(tck_r));
-
-			if (max_row != k) {
-#if 1
-				auto temp_mr = temp.row(max_row);
-				auto temp_kr = temp.row(k);
-				auto temp_mr_r = std::ranges::subrange(temp_mr.begin() + k, temp_mr.end());
-				auto temp_kr_r = std::ranges::subrange(temp_kr.begin() + k, temp_kr.end());
-				utils::swap_r(temp_kr_r, temp_mr_r);
-#else
-				for (size_type j = k; j < r; ++j) {
-					std::swap(temp[k][j], temp[max_row][j]);
+		auto my_copy = [](
+			std::ranges::input_range auto&& src,
+			std::ranges::input_range auto&& dst
+		) {
+				auto s_b = src.begin();
+				auto s_e = src.end();
+				auto d_b = dst.begin();
+				for (; s_b != s_e; ++s_b, ++d_b) {
+					*d_b = *s_b;
 				}
-#endif
-				det = -det;
+		};
+
+		auto frwz = []<typename value_type_>(
+			const MatrixLike auto& mtx,
+			const value_type_& elem
+		) {
+				auto&& [elem_row_idx, elem_col_idx] = mtx.get_elem_indices(elem);
+				auto&& elem_row = mtx.row(elem_row_idx);
+
+				auto current_to_last = std::ranges::subrange(mtx.row_begin() + elem_row_idx, mtx.row_end());
+				auto pred = [elem_col_idx](auto&& row) { return row[elem_col_idx] != 0 ? true : false; };
+				auto rows_iter = std::ranges::find_if(current_to_last, pred);
+				if (rows_iter == current_to_last.end()) {
+					return elem_row_idx;
+				}
+				auto& x = (*rows_iter).front();
+				return mtx.get_elem_row_index(x);
+		};
+
+		int sign = 1;
+
+		auto diag_range = B.diagonal_range();
+		for (auto&& diag_elem : diag_range) {
+			auto&& submatrix = B.get_submatrix(diag_elem, B[B.rows() - 1][B.cols() - 1]);
+			auto&& sub_col = submatrix.col(0);
+
+			if (diag_elem == 0) {
+				sign = -sign;
+				auto idx = frwz(B, diag_elem);
+				if (B.get_elem_row_index(diag_elem) == idx) {
+					throw std::runtime_error(" matrix is singular! ");
+				}
+				auto row_src = submatrix.row(0);
+				auto row_dst = submatrix.row(idx);
+				utils::swap_r(row_src, row_dst);
 			}
 
-
-			
-			auto&& tkk = temp[k][k];
-			for (size_type i = k + 1; i < r; ++i) {
-				auto factor = tck[i] / tkk;
-				for (size_type j = k + 1; j < r; ++j) {
-					temp[i][j] -= factor * trk[j];
-				}
+			auto m_arr = calc_m(sub_col);
+			auto&& first_row = submatrix.row(0);
+			size_t i = 0;
+			for (auto&& m : m_arr) {
+				auto&& second_row = submatrix.row(i + 1);
+				auto&& new_second_row = row_substruction(first_row, second_row, m);
+				my_copy(new_second_row, second_row);
+				++i;
 			}
-
-			det *= temp[k][k];
 		}
-#endif
-		auto&& last_elem = temp[temp.rows() - 1][temp.rows() - 1];
-		std::ranges::for_each(temp.diagonal_range(), [&temp, &det, &last_elem](auto&& it) {
-			auto&& sub = temp.submatrix(it, last_elem);
-			auto&& itr = sub.get_elem_row(it);
-			auto&& max_row_elem = max_abs(itr);
-			if (max_row_elem != it) {
-				utils::swap_r(sub.get_elem_row(max_row_element), itr);
-				det = -det;
-			}
 
-			std::ranges::for_each(sub.row_range(), [&sub, it](auto&& row) {
-				auto factor = ;
-				std::ranges::for_each(row, [](auto&& elem) {
-						elem -= factor * 
-				});
-			});
-		});
-#endif
-		return static_cast<value_type>(0);
+		auto diag_first = *B.diagonal_begin() * sign;
+		auto diag_second = B.diagonal_begin() + 1;
+		auto diag_last = B.diagonal_end();
+		auto s_to_l = std::ranges::subrange(diag_second, diag_last);
+		for (auto&& d_elem : s_to_l) {
+			diag_first *= d_elem;
+		}
+
+		return diag_first;
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto determinant(const Matrix<T>& A) -> std::decay_t<decltype(A)>::value_type {
+	constexpr auto determinant(const MatrixLike auto& A) {
 		const auto r = A.rows();
 		const auto c = A.cols();
 
@@ -370,12 +603,10 @@ namespace helpers {
 		return determinant_impl(A);
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto col_centered(const Matrix<T>& A) -> Matrix<T, Alloc> {
+	constexpr void col_centered_(const MatrixLike auto& A, MatrixLike auto& result) {
 		using size_type = std::size_t;
 		const auto r = A.rows();
 		const auto c = A.cols();
-		auto result = Matrix<T, Alloc>(r, c);
 
 		for (size_type i = 0; i < c; ++i) {
 			auto ac = A.col(i);
@@ -385,12 +616,21 @@ namespace helpers {
 				rc[j] = ac[j] - cmean;
 			}
 		}
+	}
 
+	inline auto col_centered(const MatrixLike auto& A, const auto& allocator) {
+		using value_type = std::decay_t<decltype(A)>::value_type;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		Matrix<value_type, allocator_type> result(A, allocator);
+		col_centered_(A, result);
 		return result;
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto covariance(const Matrix<T>& A) -> Matrix<T, Alloc> {
+	inline auto col_centered(const MatrixLike auto& A) {
+		return col_centered(A, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	inline auto covariance(const MatrixLike auto& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -402,7 +642,7 @@ namespace helpers {
 
 		auto centered = col_centered(A);
 
-		return (centered.transpose() * centered) / static_cast<value_type>(r - 1);
+		return (transpose(centered) * centered) / static_cast<value_type>(r - 1);
 	}
 
 	template<std::floating_point Real, utils::complex Complex = std::complex<Real>>
@@ -462,14 +702,14 @@ namespace helpers {
 			return result;
 		}
 
-		auto delta = (a_qq - a_pp) / two;
-		auto tau = delta / abs_a_pq;
-		auto sign_tau = (tau >= zero) ? one : -one;
-		auto abs_tau = std::abs(tau);
-		auto t = sign_tau / (abs_tau + std::sqrt(one + tau * tau));
+		const auto delta = (a_qq - a_pp) / two;
+		const auto tau = delta / abs_a_pq;
+		const auto sign_tau = (tau >= zero) ? one : -one;
+		const auto abs_tau = std::abs(tau);
+		const auto t = sign_tau / (abs_tau + std::sqrt(one + tau * tau));
 		c = one / std::sqrt(one + t * t);
-		auto sin_magnitude = t * c;
-		auto phase = a_pq / abs_a_pq;
+		const auto sin_magnitude = t * c;
+		const auto phase = a_pq / abs_a_pq;
 		s = sin_magnitude * phase;
 
 		return result;
@@ -492,10 +732,8 @@ namespace helpers {
 		return res;
 	};
 
-	template<std::floating_point T, typename Alloc = std::allocator<T>>
-	constexpr auto svd_jacobi_real(const Matrix<T>& A)
-		-> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>>
-	{
+#if 0
+	constexpr auto svd_jacobi_real(const MatrixLike auto& A) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -506,9 +744,9 @@ namespace helpers {
 
 		auto A_c = A;
 
-		auto U = Matrix<T, Alloc>(m, p);
-		auto Sigma = Matrix<T, Alloc>(p, p);
-		auto Vh = Matrix<T, Alloc>(p, n);
+		Matrix<value_type, std::pmr::polymorphic_allocator<value_type>> U(m, p);
+		Matrix<value_type, std::pmr::polymorphic_allocator<value_type>> Sigma(p, p);
+		Matrix<value_type, std::pmr::polymorphic_allocator<value_type>> Vh(p, n);
 
 		auto V = identity<value_type>(n);
 
@@ -518,7 +756,6 @@ namespace helpers {
 
 		auto sweeps = 0;
 		while (true) {
-			std::cout << ++sweeps << std::endl;
 			bool any_rot = false;
 
 			for (size_type pcol = 0; pcol + 1 < n; ++pcol) {
@@ -584,9 +821,9 @@ namespace helpers {
 		}
 #else
 		for (size_type j = 0; j < p; ++j) {
-			auto s = sigma[j];
-			auto Ucj = U.col(j);
-			auto Acj = A_c.col(j);
+			auto&& s = sigma[j];
+			auto&& Ucj = U.col(j);
+			auto&& Acj = A_c.col(j);
 			for (size_type i = 0; i < m; ++i) {
 				Ucj[i] = Acj[i] / s;
 			}
@@ -603,10 +840,21 @@ namespace helpers {
 			Sigma[i][i] = sigma[i];
 		}
 #else
-		std::ranges::for_each(Sigma.diagonal_range(), [sb = sigma.begin()](auto&& it) mutable {
+#if 0
+#if 0
+		std::ranges::copy(Sigma.diagonal_range(), sigma);
+#else
+		std::ranges::for_each(Sigma.diagonal_range(), 
+		[
+			sb = sigma.begin()
+		](auto&& it) mutable {
 			it = *sb;
 			++sb;
 		});
+#endif
+#else
+		std::copy(sigma.begin(), sigma.end(), Sigma.diagonal_begin());
+#endif
 #endif
 
 		// --- 8) Build Vh (p x n) = first p rows of V^H ---
@@ -652,7 +900,7 @@ namespace helpers {
 		}
 
 
-		return { U, Sigma, Vh };
+		return std::make_tuple(U, Sigma, Vh );
 	}
 
 
@@ -1058,143 +1306,882 @@ namespace helpers {
 
 		return out;
 	}
+#endif
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto householder_vector(const std::vector<T>& x) -> std::vector<T, Alloc> {
-		auto sigma = euclid_norm(x);
-		auto u = x;
-		u[0] = x[0] - sigma;
-		auto u_norm = euclid_norm(u);
-		for (auto&& elem : u) {	elem = elem / u_norm; }
-		return u;
+	constexpr auto householder_vector__(std::ranges::forward_range auto&& x) {
+		using value_type = std::ranges::range_value_t<decltype(x)>;
+		if constexpr (ComplexLike<value_type>) {
+			using T = value_type::value_type;
+			constexpr auto eps = std::numeric_limits<T>::epsilon();
+			auto& x0 = *x.begin();
+			const auto sigma = euclid_norm(x);
+			const auto abs_x0 = std::abs(x0);
+			if (abs_x0 < eps) {
+				return value_type(sigma);
+			}
+			return x0 + (x0 / abs_x0) * sigma;
+		} else {
+			auto& x0 = *x.begin();
+			const auto sigma = euclid_norm(x);
+			if (x0 > 0) {
+				return x0 + sigma;
+			}
+			return x0 - sigma;
+		}
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto householder_reflection_matrix(const std::vector<T>& x) -> Matrix<T, Alloc> {
-		using size_type = typename std::decay_t<decltype(x)>::size_type;
+	constexpr auto householder_beta(
+		std::ranges::forward_range auto&& v
+	) {
+		using value_type = std::ranges::range_value_t<decltype(v)>;
+		if constexpr (ComplexLike<value_type>) {
+			constexpr auto zero = value_type(0);
+			constexpr auto two = value_type(2);
+			auto res = zero;
+			std::ranges::for_each(v, [&res](auto&& it) { res += std::norm(it); });
+			return two / res;
+		} else {
+			constexpr auto zero = value_type(0);
+			constexpr auto two = value_type(2);
+			auto res = zero;
+			std::ranges::for_each(v, [&res](auto&& it) {
+				res += it * it;
+				});
+			return two / res;
+		}
+	}
+
+	constexpr void householder_vector_(
+		std::ranges::forward_range auto&& x,
+		std::ranges::forward_range auto&& dst
+	) {
+		*dst.begin() = householder_vector__(x);
+		std::copy(x.begin() + 1, x.end(), dst.begin() + 1);
+	}
+
+	inline auto householder_vector(
+		std::ranges::forward_range auto&& x,
+		const auto& alloc
+	) {
+		using value_type = std::ranges::range_value_t<std::decay_t<decltype(x)>>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(alloc)>, value_type>;
+		std::vector<value_type, allocator_type> res(x.size(), alloc);
+		householder_vector_(x, res);
+		return res;
+	}
+
+	constexpr auto householder_vector(std::ranges::forward_range auto&& x) {
+		return householder_vector(x, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	inline auto householder_reflection_matrix(std::ranges::forward_range auto&& x, const auto& alloc) {
+		using size_type = std::size_t;
+		using value_type = std::ranges::range_value_t<std::decay_t<decltype(x)>>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(alloc)>, value_type>;
+		constexpr auto two = static_cast<value_type>(2);
+		allocator_type vec_alloc{};
 		const auto n = x.size();
-		auto I = identity(n);
-		auto v = householder_vector(x);
-		auto vvT = Matrix<T, Alloc>(n, n);
+		auto I = identity<value_type>(n);
+		auto v = householder_vector(x, vec_alloc);
+		Matrix<value_type, allocator_type> vvT(n, n, alloc);
 		for (size_type i = 0; i < n; ++i) {
+			auto&& vvTrow = vvT.row(i);
+			auto&& vi = v[i];
 			for (size_type j = 0; j < n; ++j) {
-				vvT[i][j] = v[i] * v[j];
+				vvTrow[j] = vi * v[j];
 			}
 		}
-		return I - static_cast<T>(2) * vvT;
+
+		return I - (householder_beta(v) * vvT);
 	}
 
-#if 1
-	template<typename T, typename Alloc = std::allocator<T>>
-	auto householder_qr_decomposition(const Matrix<T>& A) -> std::pair<Matrix<T, Alloc>, Matrix<T, Alloc>> {
+	constexpr auto householder_reflection_matrix(std::ranges::forward_range auto&& x) {
+		return householder_reflection_matrix(x, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	auto householder_qr_decomposition(const MatrixLike auto& A, const auto& alloc_Q, const auto& alloc_R) {
 		using matrix = std::decay_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		using allocator_type_Q = rebind_allocator<std::decay_t<decltype(alloc_Q)>, value_type>;
+		using allocator_type_R = rebind_allocator<std::decay_t<decltype(alloc_R)>, value_type>;
 
 		const auto m = A.rows();
 		const auto n = A.cols();
 
-		if (m < n) { throw std::runtime_error("QR decomposition requires m >= n"); }
+		// if (m < n) { throw std::runtime_error("QR decomposition requires m >= n"); }
 
-		auto R = Matrix<value_type, Alloc>(A);
-		auto Q = identity<value_type, Alloc>(m);
+		Matrix<value_type, allocator_type_R> R(A, alloc_R);
+		auto Q = identity<value_type, allocator_type_Q>(m, alloc_Q);
 
 		for (size_type k = 0; k < std::min(m, n); ++k) {
-			// 1.
-			auto x = std::vector<value_type, Alloc>(m - k);
+			Matrix<value_type, allocator_type> x(1, m - k, allocator_type{});
+			auto x0 = x[0];
 			for (size_type i = k; i < m; ++i) {
-				x[i - k] = R[i][k];
+				x0[i - k] = R[i][k];
 			}
 
-			// 2. 
-			auto Hk = householder_reflection_matrix<value_type, Alloc>(x);
+			auto Hk = householder_reflection_matrix(x0);
 
-			// 3.
 			// R[k:m, k:n] = Hk * R[k:m, k:n]
-			auto R_block = R.get_submatrix(k, k, m - k, n - k);
-			R.set_submatrix(k, k, Hk * R_block);
+			const auto& R_fst_elem = R[k][k];
+			const auto& R_snd_elem = R[m - 1][n - 1];
+			auto&& R_block = R.get_submatrix(R_fst_elem, R_snd_elem);
+			auto&& r_result = Hk * R_block;
+			R.set_submatrix(R_fst_elem, r_result);
 
-			// 4. Update Q: Q[:, k:m] = Q[:, k:m] * Hk^T
-			// Hk^T = Hk
-			auto Q_block = Q.get_submatrix(0, k, m, m - k);
-			Q.set_submatrix(0, k, Q_block * Hk);
+			// Q[:, k:m] = Q[:, k:m] * Hk^T
+			const auto& Q_fst_elem = Q[0][k];
+			const auto& Q_snd_elem = Q[m - 1][m - 1];
+			auto&& Q_block = Q.get_submatrix(Q_fst_elem, Q_snd_elem);
+			auto&& q_result = Q_block * Hk;
+			Q.set_submatrix(Q_fst_elem, q_result);
 		}
 
-		return { Q, R };
+		return std::make_pair(std::move(Q), std::move(R));
 	}
 
-
-#else
-	template<typename U, typename Alloc = std::allocator<U>>
-	auto householder_qr_decomposition(const Matrix<U>& A) -> std::pair<Matrix<U, Alloc>, Matrix<U, Alloc>> {
+	auto householder_qr_decomposition(const MatrixLike auto& A) {
 		using matrix = std::decay_t<decltype(A)>;
-		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		return householder_qr_decomposition(A, allocator_type{}, allocator_type{});
+	}
 
-		const auto m = A.rows();
-		const auto n = A.cols();
+	auto hessenberg_form(const MatrixLike auto& A, const AllocatorLike auto& alloc) {
+		using value_type = typename std::decay_t<decltype(A)>::value_type;
+		using allocator_type = std::decay_t<decltype(alloc)>;
+		using res_allocator_type = rebind_allocator<allocator_type, value_type>;
+		using size_type = typename std::decay_t<decltype(A)>::size_type;
 
-		if (m < n) { throw std::runtime_error("QR decomposition requires m >= n"); }
+		const auto n = A.rows();
+		Matrix<value_type, res_allocator_type> H(A, alloc);
+		auto Q = identity<value_type>(n);
 
-		auto R = Matrix<value_type, Alloc>(A);
-		auto Q = identity<value_type, Alloc>(m);
-
-		for (size_type k = 0; k < n && k < m - 1; ++k) {
-			std::vector<value_type, Alloc> x(m - k);
-			for (size_type i = 0; i < m - k; ++i) {
-				x[i] = R[k + i][k];
+		for (size_type k = 0; k < n - 2; ++k) {
+			const size_type sub_size = n - k - 1;
+			Matrix<value_type, allocator_type> x_vec(1, sub_size, allocator_type{});
+			for (size_type i = 0; i < sub_size; ++i) {
+				x_vec[0][i] = H[k + 1 + i][k];
 			}
 
-			auto norm_x = static_cast<value_type>(0);
-			for (const auto& val : x) {
-				norm_x += val * val;
-			}
-			norm_x = std::sqrt(norm_x);
+			auto H_sub = householder_reflection_matrix(x_vec.row(0));
 
-			if (norm_x < std::numeric_limits<value_type>::epsilon()) continue;
+			auto& left_top = H[k + 1][k];
+			auto& left_bottom = H[n - 1][n - 1];
+			auto left_block = H.get_submatrix(left_top, left_bottom);
+			auto left_result = H_sub * left_block;
+			H.set_submatrix(left_top, left_result);
 
-			auto v = x;
-			v[0] += (x[0] >= U(0) ? norm_x : -norm_x);
+			auto& right_top = H[0][k + 1];
+			auto& right_bottom = H[n - 1][n - 1];
+			auto right_block = H.get_submatrix(right_top, right_bottom);
+			auto right_result = right_block * H_sub;
+			H.set_submatrix(right_top, right_result);
 
-			U norm_v = U(0);
-			for (const auto& val : v) {
-				norm_v += val * val;
-			}
-			norm_v = std::sqrt(norm_v);
+			const auto& Q_fst_elem = Q[0][k + 1];
+			const auto& Q_snd_elem = Q[n - 1][n - 1];
+			auto&& Q_block = Q.get_submatrix(Q_fst_elem, Q_snd_elem);
+			auto&& q_result = Q_block * H_sub;
+			Q.set_submatrix(Q_fst_elem, q_result);
 
-			if (norm_v < std::numeric_limits<value_type>::epsilon()) continue;
-
-			for (auto& val : v) {
-				val /= norm_v;
-			}
-
-			for (size_type j = k; j < n; ++j) {
-				auto dot = U(0);
-				for (size_type i = 0; i < m - k; ++i) {
-					dot += v[i] * R[k + i][j];
-				}
-				for (size_type i = 0; i < m - k; ++i) {
-					R[k + i][j] -= U(2) * v[i] * dot;
-				}
-			}
-
-			for (size_type i = 0; i < m; ++i) {
-				auto dot = U(0);
-				for (size_type j = 0; j < m - k; ++j) {
-					dot += Q[i][k + j] * v[j];
-				}
-				for (size_type j = 0; j < m - k; ++j) {
-					Q[i][k + j] -= U(2) * v[j] * dot;
-				}
-			}
 		}
 
-		return { Q, R };
+		return std::make_pair(std::move(Q), std::move(H));
+	}
+
+	auto hessenberg_form(const MatrixLike auto& mtx) {
+		using matrix = std::decay_t<decltype(mtx)>;
+		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		return hessenberg_form(mtx, allocator_type{});
+	}
+
+	auto upper_companion_matrix(std::ranges::input_range auto&& r, const auto& allocator) {
+		using value_type = std::ranges::range_value_t<std::decay_t<decltype(r)>>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		const auto n = r.size();
+		Matrix<value_type, allocator_type> A(n, n, allocator);
+		constexpr auto one = static_cast<value_type>(1);
+		constexpr auto m_one = static_cast<value_type>(-1);
+		for (size_t i = 1; i < n; ++i) {
+			A[i][i-1] = one;
+		}
+
+		auto&& last_col = A.col(n - 1);
+		auto c_b = last_col.begin();
+		auto c_e = last_col.end();
+		auto r_b = r.begin();
+		for (; c_b != c_e; ++c_b, ++r_b) {
+			auto& cb = *c_b;
+			auto& rb = *r_b;
+			cb = m_one * rb;
+		}
+		
+		return A;
+	}
+
+	auto upper_companion_matrix(std::ranges::input_range auto&& r) {
+		return upper_companion_matrix(r, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	auto lower_companion_matrix(std::ranges::input_range auto&& r, const auto& allocator_ucm, const auto& allocator_t) {
+		return transpose(upper_companion_matrix(r, allocator_ucm), allocator_t);
+	}
+
+	auto lower_companion_matrix(std::ranges::input_range auto&& r, const auto& allocator_ucm) {
+		return transpose(upper_companion_matrix(r, allocator_ucm), std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	auto lower_companion_matrix(std::ranges::input_range auto&& r) {
+		return transpose(upper_companion_matrix(r), std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	constexpr inline auto tr_det_2x2_(
+		const ComplexLike auto& a11,
+		const ComplexLike auto& a12,
+		const ComplexLike auto& a21,
+		const ComplexLike auto& a22)
+	{
+		auto det = a11 * a22 - a12 * a21;
+		auto tr = a11 + a22;
+		return std::make_pair(tr, det);
+	}
+
+	constexpr inline auto self_values_2x2_(
+		const ComplexLike auto& a11,
+		const ComplexLike auto& a12,
+		const ComplexLike auto& a21,
+		const ComplexLike auto& a22
+	) {
+		using complex_type = std::decay_t<decltype(a11)>;
+		using value_type = complex_type::value_type;
+		auto&& [tr, det] = tr_det_2x2_(a11, a12, a21, a22);
+		constexpr auto zero = value_type(0);
+		constexpr auto two = value_type(2);
+		constexpr auto four = value_type(4);
+		auto d = tr * tr - four * det;
+		auto x = utils::sqrt(d);
+		auto fst = ((tr - x) / two);
+		auto snd = ((tr + x) / two);
+		return std::make_pair(fst, snd);
+	}
+
+#if 0																				
+	auto wilkinson_shift_real(const MatrixLike auto& mtx) {
+		using value_type = std::decay_t<decltype(mtx)>::value_type;
+
+		constexpr auto zero = static_cast<value_type>(0);
+		constexpr auto two = static_cast<value_type>(2);
+		constexpr auto four = static_cast<value_type>(4);
+
+		const auto rows = mtx.rows();
+		const auto cols = mtx.cols();
+
+		const auto& fst = mtx[rows - 2][cols - 2];
+		const auto& lst = mtx[rows - 1][cols - 1];
+
+		auto&& sub = mtx.get_submatrix(fst, lst);
+
+		auto& a = sub[0][0];
+		auto& b = sub[0][1];
+		auto& c = sub[1][0];
+		auto& d = sub[1][1];
+
+		const auto trace = a + d;
+		const auto det = a * d - b * c;
+		const auto disc = trace * trace - four * det;
+		if (disc <= zero) { return d; }
+		const auto sqrt_disc = std::sqrt(disc);
+		const auto root1 = (trace + sqrt_disc) / two;
+		const auto root2 = (trace - sqrt_disc) / two;
+		auto mu = (std::abs(root1 - d) < std::abs(root2 - d)) ? root1 : root2;
+		return mu;
 	}
 #endif
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr void expm_i(const Matrix<T>& A_, Matrix<T>& R) {
+#if 1
+	auto wilkinson_shift_complex(
+		const ComplexLike auto& a,
+		const ComplexLike auto& b,
+		const ComplexLike auto& c,
+		const ComplexLike auto& d)
+	{
+		using value_type = std::remove_cvref_t<decltype(a)>::value_type;
+		constexpr auto two = value_type(2);
+		auto delta = (a - d) / two;
+		auto sigma = std::sqrt(((delta * delta) + (b * c)));
+		auto mu_plus = (a + d) / two + sigma;
+		auto mu_minus = (a + d) / two - sigma;
+		auto fst = std::abs(mu_plus - d);
+		auto snd = std::abs(mu_minus - d);
+		return std::move((fst < snd) ? mu_plus : mu_minus);
+	}
+
+	constexpr auto wilkinson_shift_complex(const MatrixLike auto& A) {
+		const auto n = A.rows();
+		const auto& a = A.get_elem((n - 2), (n - 2));
+		const auto& b = A.get_elem((n - 2), (n - 1));
+		const auto& c = A.get_elem((n - 1), (n - 2));
+		const auto& d = A.get_elem((n - 1), (n - 1));
+		return wilkinson_shift_complex(a, b, c, d);
+	}
+#if 0
+	constexpr auto wilkinson_shift_real(const MatrixLike auto& A) {
+		auto res = wilkinson_shift_complex(A);
+		if (res.imag()) { throw std::runtime_error(" wilkinson_shift_real | can't retun complex \n "); }
+		return res.real();
+	}
+#endif
+
+#if 0
+	auto wilkinson_shift(const MatrixLike auto& A) {
+		auto n = A.rows();
+		auto fst = A[n - 2][n - 2];
+		auto snd = A[n - 1][n - 1];
+		auto&& sub = A.get_submatrix(fst, snd);
+		auto&& a = sub[0][0];
+		auto&& b = sub[0][1];
+		auto&& c = sub[1][0];
+		auto&& d = sub[1][1];
+		auto x = wilkinson_shift_complex(a, b, c, d);
+		auto res = x.real();
+		return res;
+	}
+#endif
+#endif
+
+	template<typename value_type>
+	inline auto first_standard_basis_vector(size_t n, const AllocatorLike auto& allocator) {
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		constexpr auto one = static_cast<value_type>(1);
+		Matrix<value_type, allocator_type> e1(n, 1, allocator);
+		e1[0][0] = one;
+		return e1;
+	}
+
+	template<typename value_type>
+	inline auto basis_vector(size_t n) {
+		return first_standard_basis_vector<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+	inline auto francis_vector(const MatrixLike auto& A) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		const auto n = A.rows();
+		auto a = A[n - 2][n - 2];
+		auto b = A[n - 2][n - 1];
+		auto c = A[n - 1][n - 2];
+		auto d = A[n - 1][n - 1];
+		auto [tr, det] = tr_det_2x2_(a, b, c, d);
+		auto I = identity<value_type>(n);
+		auto e1 = basis_vector<value_type>(n);
+		auto x = (A * A - tr * A + det * I) * e1; // (NxN) * col -> col
+		return x; // x[n][1];
+	}
+
+	auto similarity_transformations(std::ranges::input_range auto&& r, const AllocatorLike auto& allocator) {
+		using value_type = std::ranges::range_value_t<decltype(r)>;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		constexpr auto zero = static_cast<value_type>(0);
+		Matrix<value_type, allocator_type> v(r.size(), 1, allocator);
+		auto v_col = v.col(0);
+		std::copy(r.begin(), r.end(), v_col.begin());
+		int sign = 1;
+		if (v[0][0] < zero) { sign = -1; }
+		auto x_norm = euclid_norm(r);
+		v[0][0] = v[0][0] - x_norm * sign;
+		auto vT = transpose(v); // -> vT[1][n];
+		auto vvT = v * vT; // -> vvT[n][n]
+		auto vTv = vT * v; // -> scalar
+		auto&& vTv_val = vTv.get_elem(0, 0);
+		auto I = identity<value_type>(v.rows()); 
+		auto P0 = I - 2 * vvT / vTv_val;
+		return P0;
+	}
+
+	auto similarity_transformations(std::ranges::input_range auto&& r) {
+		return similarity_transformations(r, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+#if 0
+	auto francis_qr_givens(const MatrixLike auto& A) {
+		using matrix_type = std::decay_t<decltype(A)>;
+		using value_type = matrix_type::value_type;
+
+		size_t n = A.cols();
+
+		auto shift = wilkinson_shift_real(A);
+		auto I = identity<value_type>(n);
+		auto Tmat = A - shift * I;
+		auto Q = I;
+		std::vector<std::pair<value_type, value_type>> rots(n - 1);
+		size_t rot_count = 0;
+
+		auto x = Tmat.get_elem(0, 0);
+		auto y = Tmat.get_elem(1, 0);
+		auto denom = std::sqrt(x * x + y * y);
+		auto c = x / denom;
+		auto s = y / denom;
+		rots[rot_count++] = std::make_pair(c, s);
+
+		for (size_t j = 0; j < n; ++j) {
+			auto& t1 = Tmat.get_elem(0, j);
+			auto& t2 = Tmat.get_elem(1, j);
+			auto t1_old = t1;
+			t1 = c * t1 + s * t2;
+			t2 = -s * t1_old + c * t2;
+		}
+
+		for (size_t i = 0; i < n; ++i) {
+			auto& q1 = Q.get_elem(i, 0);
+			auto& q2 = Q.get_elem(i, 1);
+			auto q1_old = q1;
+			q1 = c * q1 + s * q2;
+			q2 = -s * q1_old + c * q2;
+		}
+
+		for (size_t k = 1; k < n - 1; ++k) {
+			auto& x = Tmat.get_elem(k, (k - 1));
+			auto& y = Tmat.get_elem((k + 1), (k - 1));
+			auto denom = std::sqrt(x * x + y * y);
+			auto c = x / denom;
+			auto s = y / denom;
+			rots[rot_count++] = std::make_pair(c, s);
+
+			for (size_t j = k - 1; j < n; ++j) {
+				auto& t1 = Tmat.get_elem(k, j);
+				auto& t2 = Tmat.get_elem((k + 1), j);
+				auto t1_old = t1;
+				t1 = c * t1 + s * t2;
+				t2 = -s * t1_old + c * t2;
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& q1 = Q.get_elem(i, k);
+				auto& q2 = Q.get_elem(i, (k + 1));
+				auto q1_old = q1;
+				q1 = c * q1 + s * q2;
+				q2 = -s * q1_old + c * q2;
+			}
+		}
+
+		Tmat = A;
+
+		for (size_t k = 0; k < rot_count; ++k) {
+			auto& c = rots[k].first;
+			auto& s = rots[k].second;
+			for (size_t j = 0; j < n; ++j) {
+				auto& t1 = Tmat.get_elem(k, j);
+				auto& t2 = Tmat.get_elem((k + 1), j);
+				auto t1_old = t1;
+				t1 = c * t1 + s * t2;
+				t2 = -s * t1_old + c * t2;
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& t1 = Tmat.get_elem(i, k);
+				auto& t2 = Tmat.get_elem(i, (k + 1));
+				auto t1_old = t1;
+				t1 = c * t1 - s * t2;
+				t2 = s * t1_old + c * t2;
+			}
+		}
+
+		return std::make_pair(Tmat, Q);
+	}
+#endif
+
+	inline constexpr auto householder_vector_francis_qr_2x2_complex(const ComplexLike auto& x0, const ComplexLike auto& x1) {
+		using value_type = std::decay_t<decltype(x0)>;
+		auto norm_sq = std::norm(x0) + std::norm(x1);
+		auto norm = std::sqrt(norm_sq);
+		constexpr auto zero = value_type(0);
+		constexpr auto one = value_type(1);
+
+		if (norm == 0) {
+			return std::make_tuple(zero, zero, zero);
+		}
+
+		auto s = (x0 != zero) ? (x0 / std::abs(x0)) : one;
+		auto v0 = x0 + s * norm;
+		auto v1 = x1;
+		auto beta = one / (norm * (norm + std::abs(x0)));
+		return std::make_tuple(v0, v1, beta);
+	}
+
+	auto francis_qr_householder(const MatrixLike auto& A) {
+		using matrix_type = std::decay_t<decltype(A)>;
+		using value_type = matrix_type::value_type;
+
+		constexpr auto householder2 = [](const auto& x0, const auto& x1) {
+			return householder_vector_francis_qr_2x2_complex(x0, x1);
+		};
+
+		constexpr auto zero = static_cast<value_type>(0);
+		const size_t n = A.cols();
+
+		auto R = A;
+		auto Q = identity<value_type>(n);
+
+		auto shift = wilkinson_shift_complex(R);
+
+		auto u = std::vector<value_type>(n);   // row vector v^T * A
+		auto p = std::vector<value_type>(n);   // column vector A * v
+		{
+			auto x0 = R.get_elem(0, 0) - shift;
+			auto x1 = R.get_elem(1, 0);
+			auto [v0, v1, beta] = householder2(x0, x1);
+			if (std::abs(beta) != 0) {
+				for (size_t j = 0; j < n; ++j) {
+					auto& R_k_j = R.get_elem(0, j);
+					auto& R_k1_j = R.get_elem((0 + 1), j);
+					u[j] = v0 * R_k_j + v1 * R_k1_j;
+				}
+
+				for (size_t j = 0; j < n; ++j) {
+					auto& R_k_j = R.get_elem(0, j);
+					auto& R_k1_j = R.get_elem((0 + 1), j);
+					R_k_j -= beta * v0 * u[j];
+					R_k1_j -= beta * v1 * u[j];
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& R_i_k = R.get_elem(i, 0);
+					auto& R_i_k1 = R.get_elem(i, (0 + 1));
+					p[i] = R_i_k * v0 + R_i_k1 * v1;
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& R_i_k = R.get_elem(i, 0);
+					auto& R_i_k1 = R.get_elem(i, (0 + 1));
+					R_i_k -= beta * p[i] * v0;
+					R_i_k1 -= beta * p[i] * v1;
+				}
+
+				// --- accumulate Q = Q * H ---
+				// Q * H = Q - beta * (Q * v) * v^T
+				for (size_t i = 0; i < n; ++i) {
+					auto& Q_i_k = Q.get_elem(i, 0);
+					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
+					u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& Q_i_k = Q.get_elem(i, 0);
+					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
+					Q_i_k -= beta * u[i] * v0;
+					Q_i_k1 -= beta * u[i] * v1;
+				}
+			}
+		}
+
+		for (size_t k = 1; k < n - 1; ++k) {
+			auto x0 = R.get_elem(k, (k - 1));
+			auto x1 = R.get_elem((k + 1), (k - 1));
+			auto [v0, v1, beta] = householder2(x0, x1);
+
+			for (size_t j = 0; j < n; ++j) {
+				auto& R_k_j = R.get_elem(k, j);
+				auto& R_k1_j = R.get_elem((k + 1), j);
+				u[j] = v0 * R_k_j + v1 * R_k1_j;
+			}
+
+			for (size_t j = 0; j < n; ++j) {
+				auto& R_k_j = R.get_elem(k, j);
+				auto& R_k1_j = R.get_elem((k + 1), j);
+				R_k_j -= beta * v0 * u[j];
+				R_k1_j -= beta * v1 * u[j];
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& R_i_k = R.get_elem(i, k);
+				auto& R_i_k1 = R.get_elem(i, (k + 1));
+				p[i] = R_i_k * v0 + R_i_k1 * v1;
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& R_i_k = R.get_elem(i, k);
+				auto& R_i_k1 = R.get_elem(i, (k + 1));
+				R_i_k -= beta * p[i] * v0;
+				R_i_k1 -= beta * p[i] * v1;
+			}
+
+			// --- accumulate Q = Q * H ---
+			// Q * H = Q - beta * (Q * v) * v^T
+			for (size_t i = 0; i < n; ++i) {
+				auto& Q_i_k = Q.get_elem(i, k);
+				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
+				u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& Q_i_k = Q.get_elem(i, k);
+				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
+				Q_i_k -= beta * u[i] * v0;
+				Q_i_k1 -= beta * u[i] * v1;
+			}
+		}
+
+		return std::make_pair(Q, R);
+	}
+
+
+	auto francis_qr_householder_spec_shift(const MatrixLike auto& A, const ScalarLike auto& scalar) {
+		using matrix_type = std::decay_t<decltype(A)>;
+		using value_type = matrix_type::value_type;
+
+		constexpr auto householder2 = [](const auto& x0, const auto& x1) {
+			return householder_vector_francis_qr_2x2_complex(x0, x1);
+			};
+
+		constexpr auto zero = static_cast<value_type>(0);
+		const size_t n = A.cols();
+
+		auto R = A;
+		auto Q = identity<value_type>(n);
+
+		auto shift = scalar;
+
+		auto u = std::vector<value_type>(n);   // row vector v^T * A
+		auto p = std::vector<value_type>(n);   // column vector A * v
+		{
+			auto x0 = R.get_elem(0, 0) - shift;
+			auto x1 = R.get_elem(1, 0);
+			auto [v0, v1, beta] = householder2(x0, x1);
+			if (std::abs(beta) != 0) {
+				for (size_t j = 0; j < n; ++j) {
+					auto& R_k_j = R.get_elem(0, j);
+					auto& R_k1_j = R.get_elem((0 + 1), j);
+					u[j] = v0 * R_k_j + v1 * R_k1_j;
+				}
+
+				for (size_t j = 0; j < n; ++j) {
+					auto& R_k_j = R.get_elem(0, j);
+					auto& R_k1_j = R.get_elem((0 + 1), j);
+					R_k_j -= beta * v0 * u[j];
+					R_k1_j -= beta * v1 * u[j];
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& R_i_k = R.get_elem(i, 0);
+					auto& R_i_k1 = R.get_elem(i, (0 + 1));
+					p[i] = R_i_k * v0 + R_i_k1 * v1;
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& R_i_k = R.get_elem(i, 0);
+					auto& R_i_k1 = R.get_elem(i, (0 + 1));
+					R_i_k -= beta * p[i] * v0;
+					R_i_k1 -= beta * p[i] * v1;
+				}
+
+				// --- accumulate Q = Q * H ---
+				// Q * H = Q - beta * (Q * v) * v^T
+				for (size_t i = 0; i < n; ++i) {
+					auto& Q_i_k = Q.get_elem(i, 0);
+					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
+					u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
+				}
+
+				for (size_t i = 0; i < n; ++i) {
+					auto& Q_i_k = Q.get_elem(i, 0);
+					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
+					Q_i_k -= beta * u[i] * v0;
+					Q_i_k1 -= beta * u[i] * v1;
+				}
+			}
+		}
+
+		for (size_t k = 1; k < n - 1; ++k) {
+			auto x0 = R.get_elem(k, (k - 1));
+			auto x1 = R.get_elem((k + 1), (k - 1));
+			auto [v0, v1, beta] = householder2(x0, x1);
+
+			for (size_t j = 0; j < n; ++j) {
+				auto& R_k_j = R.get_elem(k, j);
+				auto& R_k1_j = R.get_elem((k + 1), j);
+				u[j] = v0 * R_k_j + v1 * R_k1_j;
+			}
+
+			for (size_t j = 0; j < n; ++j) {
+				auto& R_k_j = R.get_elem(k, j);
+				auto& R_k1_j = R.get_elem((k + 1), j);
+				R_k_j -= beta * v0 * u[j];
+				R_k1_j -= beta * v1 * u[j];
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& R_i_k = R.get_elem(i, k);
+				auto& R_i_k1 = R.get_elem(i, (k + 1));
+				p[i] = R_i_k * v0 + R_i_k1 * v1;
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& R_i_k = R.get_elem(i, k);
+				auto& R_i_k1 = R.get_elem(i, (k + 1));
+				R_i_k -= beta * p[i] * v0;
+				R_i_k1 -= beta * p[i] * v1;
+			}
+
+			// --- accumulate Q = Q * H ---
+			// Q * H = Q - beta * (Q * v) * v^T
+			for (size_t i = 0; i < n; ++i) {
+				auto& Q_i_k = Q.get_elem(i, k);
+				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
+				u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				auto& Q_i_k = Q.get_elem(i, k);
+				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
+				Q_i_k -= beta * u[i] * v0;
+				Q_i_k1 -= beta * u[i] * v1;
+			}
+		}
+
+		return std::make_pair(Q, R);
+	}
+
+	template<typename T> constexpr auto get_epsilon() {
+		if constexpr (ComplexLike<T>) {
+			using val_T = T::value_type;
+			constexpr auto eps = std::numeric_limits<val_T>::epsilon() * val_T(3);
+			return eps;
+		}	else {
+			constexpr auto eps = std::numeric_limits<T>::epsilon() * T(3);
+			return eps;
+		}
+	}
+
+	auto self_values(const MatrixLike auto& A, const auto& allocator) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		using result_value_type = value_type;
+		using result_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, result_value_type>;
+
+		auto [_, H] = hessenberg_form(A);
+		constexpr auto eps = get_epsilon<value_type>();
+		const auto r = H.rows();
+
+		auto I = identity<value_type>(H.rows());
+		auto Q_total = I;
+
+		std::vector<result_value_type, result_allocator_type> result;
+		result.reserve(r);
+		auto m = r;
+		auto H_curr = H.get_submatrix(H[0][0], H[r - 1][r - 1]);
+		while (m > 2) {
+			H.print();
+			if (std::abs(H_curr[m - 1][m - 2]) <= eps) {
+				result.push_back(H_curr[m - 1][m - 1]);
+				--m;
+				if (m == 0) break;
+				H_curr = H_curr.get_submatrix(H_curr[0][0], H_curr[m - 1][m - 1]);
+			} else if (m > 2 && std::abs(H_curr[m - 2][m - 3]) <= eps) {
+				auto a = H_curr[m - 2][m - 2];
+				auto b = H_curr[m - 2][m - 1];
+				auto c = H_curr[m - 1][m - 2];
+				auto d = H_curr[m - 1][m - 1];
+
+				auto [lambda1, lambda2] = self_values_2x2_(a, b, c, d);
+
+				result.push_back(lambda1);
+				result.push_back(lambda2);
+				m -= 2;
+				if (m == 0)	break;
+				H_curr = H_curr.get_submatrix(H_curr[0][0], H_curr[m - 1][m - 1]);
+			} else {
+				auto [Q, R] = francis_qr_householder(H_curr);
+				auto Q_tmp = I;
+				Q_tmp.set_submatrix(Q_tmp[0][0], Q);
+				Q_total = Q_total * Q_tmp;
+				H.set_submatrix(H[0][0], R);
+			}
+		}
+		H.print();
+		auto [Q, R] = francis_qr_householder(H);
+		H = R;
+		H.print();
+		if (m == 2) {
+			auto [r1, r2] = self_values_2x2_(
+				H[0][0],
+				H[0][1],
+				H[1][0],
+				H[1][1]
+			);
+			result.push_back(r1);
+			result.push_back(r2);
+			return result;
+		}
+
+		if (m == 1) {
+			result.push_back(H[0][0]);
+		} 
+
+		
+	}
+
+#if 0
+	auto fransic_qr(const MatrixLike auto& A) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = matrix::allocator_type;
+		auto&& [ T, Q_ ] = hessenberg_form(A);
+		using result_value_type = value_type;
+		using result_allocator_type = rebind_allocator<allocator_type, result_value_type>;
+
+		constexpr auto thr = static_cast<value_type>(3);
+		constexpr auto eps = std::numeric_limits<value_type>::epsilon() * thr;
+		auto converged = [eps](const MatrixLike auto& mtx) {
+
+		};
+
+		auto I = identity<value_type, allocator_type>(A.rows(), allocator_type{});
+		std::cout << "T:" << std::endl;
+		T.print();
+		std::cout << " ----------------------- " << std::endl;
+		for (int i = 0; !converged(T); ++i) {
+			auto mu = wilkinson_shift(A);
+			auto I_mu = I * mu;
+			T = T - I_mu;
+			auto&& [Q, R] = householder_qr_decomposition(T);
+			T = R * Q;
+			T = T + I_mu;
+			std::cout << "T" << i << ":" << std::endl;
+			T.print();
+			std::cout << " ----------------------- " << std::endl;
+		}
+
+		return std::make_pair(std::move(T), std::move(Q_));
+	}
+#endif
+
+	auto self_values(const MatrixLike auto& A) {
+		return self_values(A, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+
+#if 1
+	inline auto schur_decomposition(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+
+		using value_type = typename std::decay_t<decltype(A)>::value_type;
+		const size_t n = A.cols();
+
+
+
+	}
+
+	inline auto schur_decomposition(const MatrixLike auto& A) {
+		return schur_decomposition(A, std::pmr::polymorphic_allocator<std::byte>{});
+	}
+#endif
+
+	constexpr void expm_i(const MatrixLike auto& A_, MatrixLike auto& R) {
 		using matrix = std::decay_t<decltype(A_)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1220,7 +2207,7 @@ namespace helpers {
 			s = std::max(s, static_cast<int>(std::ceil(std::log2(A_norm / theta))));
 			// scale A
 			auto scale = std::ldexp(one, -s);
-			A *= scale;
+			A = A * scale;
 		}
 
 		// build U and V for Pade
@@ -1241,7 +2228,7 @@ namespace helpers {
 		constexpr auto c12 = static_cast<value_type>(182.0);
 		constexpr auto c13 = static_cast<value_type>(1.0);
 
-		auto I = identity<T, Alloc>(A.rows());
+		auto I = identity<value_type>(A.rows());
 
 		// U = A * (c1*I + c3*A2 + c5*A4 + c7*A6 + c9*A8 + c11*A10 + c13*A12)
 		// V = c0*I + c2*A2 + c4*A4 + c6*A6 + c8*A8 + c10*A10 + c12*A12
@@ -1256,12 +2243,12 @@ namespace helpers {
 
 		// Prepare V
 		auto V = I * c0;
-		V += A2 * c2;
-		V += A4 * c4;
-		V += A6 * c6;
-		V += A8 * c8;
-		V += A10 * c10;
-		V += A12 * c12;
+		V = V * (A2 * c2);
+		V = V * (A4 * c4);
+		V = V * (A6 * c6);
+		V = V * (A8 * c8);
+		V = V * (A10 * c10);
+		V = V * (A12 * c12);
 
 		auto Umat = A * (I * c1
 			+ A2 * c3
@@ -1287,11 +2274,17 @@ namespace helpers {
 		// return R;
 	}
 
-	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto expm(const Matrix<T>& A) -> Matrix<T, Alloc> {
-		auto R = Matrix<T, Alloc>();
-		expm_i<T, Alloc>(A, R);
+	inline auto expm(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+		using matrix = std::decay_t<decltype(A)>;
+		using value_type = matrix::value_type;
+		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
+		Matrix<value_type, allocator_type> R(A.rows(), A.cols());
+		expm_i(A, R);
 		return R;
+	}
+
+	inline auto expm(const MatrixLike auto& A) {
+		return expm(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
@@ -1522,6 +2515,89 @@ namespace helpers {
 		auto X = A * inverse<T, Alloc>(R) * Q.transpose();
 		return X;
 	}
+
+
+#if 0
+#if 1
+	bool inBound(int i, int j, const std::vector<std::vector<int>>& matrix) {
+		return 0 <= i && i < matrix.size() && 0 <= j && j < matrix[i].size();
+	}
+#else
+	template<typename T>
+	bool inBound(const std::signed_integral auto& i, const std::signed_integral auto& j, const Matrix<T>& mtx) {
+		using value_type = std::decay_t<decltype(mtx)>::value_type;
+		constexpr auto zero = static_cast<value_type>(0);
+
+		constexpr bool fst = zero <= i;
+		constexpr bool snd = i < mtx.size();
+		constexpr bool trd = zero <= j;
+		constexpr bool fth = j < mtx.row().size();
+
+		return fst && snd && trd && fth;
+	}
+#endif
+#endif
+
+
+#if 0
+	bool dfs(
+		int i, int j,
+		const std::pair<int, int>& end,
+		std::vector<std::vector<bool>>& used,
+		const std::vector<std::vector<int>>& matrix
+	) {
+		if (
+			!inBound(i, j, matrix) ||
+			matrix[i][j] == 1 ||
+			used[i][j]
+			) {
+			return false;
+		}
+
+		used[i][j] = true;
+		if (i == end.first && j == end.second) {
+			return true;
+		}
+
+		return dfs(i - 1, j, end, used, matrix) || // upper
+			dfs(i, j + 1, end, used, matrix) || // right
+			dfs(i + 1, j, end, used, matrix) || // lower
+			dfs(i, j + 1, end, used, matrix) ; // left
+	}
+
+	void colored_dfs(
+		int i, int j,
+		int color,
+		std::vector<std::vector<bool>>& used,
+		const std::vector<std::vector<int>>& matrix
+	) {
+		if (
+			!inBound(i, j, matrix) ||
+			matrix[i][j] != color ||
+			used[i][j]
+			) {
+			return;
+		}
+
+		used[i][j] = true;
+
+		colored_dfs(i - 1, j, color, used, matrix); // upper
+		colored_dfs(i, j + 1, color, used, matrix); // right
+		colored_dfs(i + 1, j, color, used, matrix); // lower
+		colored_dfs(i, j + 1, color, used, matrix); // left
+	}
+#endif
+
+#if 0
+	bool hasPath(
+		const std::vector<std::vector<int>>& matrix,
+		std::pair<int, int> start,
+		std::pair<int, int> end
+	) {
+		std::vector<std::vector<bool>> used(matrix.size(), std::vector<bool>(matrix[0].size(), false));
+		return dfs(start.first, start.second, end, used, matrix);
+	}
+#endif
 
 
 } // ns
