@@ -330,11 +330,19 @@ int main() {
 		}
 #endif
 		{
-			std::cout << "MTX QR_householder self_values: " << std::endl;
+			std::cout << "MTX QR_householder schur: " << std::endl;
 			auto tmp = utils::to_complex(A);
-			auto res = helpers::self_values(tmp);
-			std::cout << "self_values : ";
-			print_vec(res);
+			auto [Q, T] = helpers::schur(tmp);
+			std::cout << "Q_total :" << std::endl;
+			Q.print();
+			std::cout << " T : " << std::endl;
+			T.print();
+			auto Qh = helpers::transpose(Q);
+			std::ranges::for_each(Qh.def_range(), [](auto&& it) { it = std::conj(it); });
+
+			auto res = Q * T * Qh;
+			std::cout << "Q * T * transpose(Q) :" << std::endl;
+			res.print();
 			std::cout << "----------------------" << std::endl;
 		}
 

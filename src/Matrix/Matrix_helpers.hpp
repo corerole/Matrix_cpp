@@ -1822,127 +1822,10 @@ namespace helpers {
 		constexpr auto zero = static_cast<value_type>(0);
 		const size_t n = A.cols();
 
-		auto R = A;
+		matrix_type R(A);
 		auto Q = identity<value_type>(n);
 
 		auto shift = wilkinson_shift_complex(R);
-
-		auto u = std::vector<value_type>(n);   // row vector v^T * A
-		auto p = std::vector<value_type>(n);   // column vector A * v
-		{
-			auto x0 = R.get_elem(0, 0) - shift;
-			auto x1 = R.get_elem(1, 0);
-			auto [v0, v1, beta] = householder2(x0, x1);
-			if (std::abs(beta) != 0) {
-				for (size_t j = 0; j < n; ++j) {
-					auto& R_k_j = R.get_elem(0, j);
-					auto& R_k1_j = R.get_elem((0 + 1), j);
-					u[j] = v0 * R_k_j + v1 * R_k1_j;
-				}
-
-				for (size_t j = 0; j < n; ++j) {
-					auto& R_k_j = R.get_elem(0, j);
-					auto& R_k1_j = R.get_elem((0 + 1), j);
-					R_k_j -= beta * v0 * u[j];
-					R_k1_j -= beta * v1 * u[j];
-				}
-
-				for (size_t i = 0; i < n; ++i) {
-					auto& R_i_k = R.get_elem(i, 0);
-					auto& R_i_k1 = R.get_elem(i, (0 + 1));
-					p[i] = R_i_k * v0 + R_i_k1 * v1;
-				}
-
-				for (size_t i = 0; i < n; ++i) {
-					auto& R_i_k = R.get_elem(i, 0);
-					auto& R_i_k1 = R.get_elem(i, (0 + 1));
-					R_i_k -= beta * p[i] * v0;
-					R_i_k1 -= beta * p[i] * v1;
-				}
-
-				// --- accumulate Q = Q * H ---
-				// Q * H = Q - beta * (Q * v) * v^T
-				for (size_t i = 0; i < n; ++i) {
-					auto& Q_i_k = Q.get_elem(i, 0);
-					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
-					u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
-				}
-
-				for (size_t i = 0; i < n; ++i) {
-					auto& Q_i_k = Q.get_elem(i, 0);
-					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
-					Q_i_k -= beta * u[i] * v0;
-					Q_i_k1 -= beta * u[i] * v1;
-				}
-			}
-		}
-
-		for (size_t k = 1; k < n - 1; ++k) {
-			auto x0 = R.get_elem(k, (k - 1));
-			auto x1 = R.get_elem((k + 1), (k - 1));
-			auto [v0, v1, beta] = householder2(x0, x1);
-
-			for (size_t j = 0; j < n; ++j) {
-				auto& R_k_j = R.get_elem(k, j);
-				auto& R_k1_j = R.get_elem((k + 1), j);
-				u[j] = v0 * R_k_j + v1 * R_k1_j;
-			}
-
-			for (size_t j = 0; j < n; ++j) {
-				auto& R_k_j = R.get_elem(k, j);
-				auto& R_k1_j = R.get_elem((k + 1), j);
-				R_k_j -= beta * v0 * u[j];
-				R_k1_j -= beta * v1 * u[j];
-			}
-
-			for (size_t i = 0; i < n; ++i) {
-				auto& R_i_k = R.get_elem(i, k);
-				auto& R_i_k1 = R.get_elem(i, (k + 1));
-				p[i] = R_i_k * v0 + R_i_k1 * v1;
-			}
-
-			for (size_t i = 0; i < n; ++i) {
-				auto& R_i_k = R.get_elem(i, k);
-				auto& R_i_k1 = R.get_elem(i, (k + 1));
-				R_i_k -= beta * p[i] * v0;
-				R_i_k1 -= beta * p[i] * v1;
-			}
-
-			// --- accumulate Q = Q * H ---
-			// Q * H = Q - beta * (Q * v) * v^T
-			for (size_t i = 0; i < n; ++i) {
-				auto& Q_i_k = Q.get_elem(i, k);
-				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
-				u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
-			}
-
-			for (size_t i = 0; i < n; ++i) {
-				auto& Q_i_k = Q.get_elem(i, k);
-				auto& Q_i_k1 = Q.get_elem(i, (k + 1));
-				Q_i_k -= beta * u[i] * v0;
-				Q_i_k1 -= beta * u[i] * v1;
-			}
-		}
-
-		return std::make_pair(Q, R);
-	}
-
-
-	auto francis_qr_householder_spec_shift(const MatrixLike auto& A, const ScalarLike auto& scalar) {
-		using matrix_type = std::decay_t<decltype(A)>;
-		using value_type = matrix_type::value_type;
-
-		constexpr auto householder2 = [](const auto& x0, const auto& x1) {
-			return householder_vector_francis_qr_2x2_complex(x0, x1);
-			};
-
-		constexpr auto zero = static_cast<value_type>(0);
-		const size_t n = A.cols();
-
-		auto R = A;
-		auto Q = identity<value_type>(n);
-
-		auto shift = scalar;
 
 		auto u = std::vector<value_type>(n);   // row vector v^T * A
 		auto p = std::vector<value_type>(n);   // column vector A * v
@@ -2055,7 +1938,53 @@ namespace helpers {
 		}
 	}
 
-	auto self_values(const MatrixLike auto& A, const auto& allocator) {
+	auto francis_qr_with_shift(const MatrixLike auto& H_, const MatrixLike auto& Q, const ScalarLike auto& lambda2){
+		using matrix_type = std::decay_t<decltype(H_)>;
+		using value_type = matrix_type::value_type;
+		value_type mu = lambda2;
+		value_type x0 = H_[0][0] - mu;
+		value_type x1 = H_[1][0];
+
+		Matrix<value_type> H(H_);
+		Matrix<value_type> Q_total(Q);
+
+		auto [v0, v1, beta] = householder_vector_francis_qr_2x2_complex(x0, x1);
+
+		if (std::abs(beta) > 0) {
+			const size_t n = H.rows();
+
+			std::vector<value_type> u_left(n);
+			for (size_t j = 0; j < n; ++j) {
+				u_left[j] = std::conj(v0) * H[0][j] + std::conj(v1) * H[1][j];
+			}
+			for (size_t j = 0; j < n; ++j) {
+				H[0][j] -= beta * v0 * u_left[j];
+				H[1][j] -= beta * v1 * u_left[j];
+			}
+
+			std::vector<value_type> u_right(n);
+			for (size_t i = 0; i < n; ++i) {
+				u_right[i] = H[i][0] * v0 + H[i][1] * v1;
+			}
+			for (size_t i = 0; i < n; ++i) {
+				H[i][0] -= beta * u_right[i] * std::conj(v0);
+				H[i][1] -= beta * u_right[i] * std::conj(v1);
+			}
+
+			std::vector<value_type> q_vec(n);
+			for (size_t i = 0; i < n; ++i) {
+				q_vec[i] = Q_total[i][0] * std::conj(v0) + Q_total[i][1] * std::conj(v1);
+			}
+
+			for (size_t i = 0; i < n; ++i) {
+				Q_total[i][0] -= beta * q_vec[i] * v0;
+				Q_total[i][1] -= beta * q_vec[i] * v1;
+			}
+		}
+		return std::make_pair(Q_total, H);
+	}
+
+	auto schur(const MatrixLike auto& A, const auto& allocator) {
 		using matrix = std::decay_t<decltype(A)>;
 		using value_type = matrix::value_type;
 		using allocator_type = matrix::allocator_type;
@@ -2066,30 +1995,39 @@ namespace helpers {
 		constexpr auto eps = get_epsilon<value_type>();
 		const auto r = H.rows();
 
-		auto I = identity<value_type>(H.rows());
+		auto I = identity<value_type>(r);
 		auto Q_total = I;
 
+#if 0
 		std::vector<result_value_type, result_allocator_type> result;
 		result.reserve(r);
+#endif
+
 		auto m = r;
 		auto H_curr = H.get_submatrix(H[0][0], H[r - 1][r - 1]);
 		while (m > 2) {
-			H.print();
 			if (std::abs(H_curr[m - 1][m - 2]) <= eps) {
+#if 0
 				result.push_back(H_curr[m - 1][m - 1]);
+#endif
 				--m;
 				if (m == 0) break;
 				H_curr = H_curr.get_submatrix(H_curr[0][0], H_curr[m - 1][m - 1]);
 			} else if (m > 2 && std::abs(H_curr[m - 2][m - 3]) <= eps) {
+
 				auto a = H_curr[m - 2][m - 2];
 				auto b = H_curr[m - 2][m - 1];
 				auto c = H_curr[m - 1][m - 2];
 				auto d = H_curr[m - 1][m - 1];
 
 				auto [lambda1, lambda2] = self_values_2x2_(a, b, c, d);
-
+#if 0
 				result.push_back(lambda1);
 				result.push_back(lambda2);
+#endif
+				auto&& [Q_local, H_new] = francis_qr_with_shift(H_curr, Q_total, lambda2);
+				Q_total = Q_local;
+				H.set_submatrix(H[0][0], H_new);
 				m -= 2;
 				if (m == 0)	break;
 				H_curr = H_curr.get_submatrix(H_curr[0][0], H_curr[m - 1][m - 1]);
@@ -2101,27 +2039,22 @@ namespace helpers {
 				H.set_submatrix(H[0][0], R);
 			}
 		}
-		H.print();
-		auto [Q, R] = francis_qr_householder(H);
-		H = R;
-		H.print();
+
 		if (m == 2) {
-			auto [r1, r2] = self_values_2x2_(
+			auto [lambda1, lambda2] = self_values_2x2_(
 				H[0][0],
 				H[0][1],
 				H[1][0],
 				H[1][1]
 			);
-			result.push_back(r1);
-			result.push_back(r2);
-			return result;
+
+			auto&& [Q_local, H_local] = francis_qr_with_shift(H, Q_total, lambda2);
+			Q_total = Q_local;
+			H = H_local;
+			return std::make_pair(Q_total, H);
 		}
 
-		if (m == 1) {
-			result.push_back(H[0][0]);
-		} 
-
-		
+		return std::make_pair(Q_total * _, H);
 	}
 
 #if 0
@@ -2159,27 +2092,9 @@ namespace helpers {
 	}
 #endif
 
-	auto self_values(const MatrixLike auto& A) {
-		return self_values(A, std::pmr::polymorphic_allocator<std::byte>{});
+	auto schur(const MatrixLike auto& A) {
+		return schur(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
-
-#if 1
-	inline auto schur_decomposition(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
-		using matrix = std::decay_t<decltype(A)>;
-		using value_type = matrix::value_type;
-		using allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, value_type>;
-
-		using value_type = typename std::decay_t<decltype(A)>::value_type;
-		const size_t n = A.cols();
-
-
-
-	}
-
-	inline auto schur_decomposition(const MatrixLike auto& A) {
-		return schur_decomposition(A, std::pmr::polymorphic_allocator<std::byte>{});
-	}
-#endif
 
 	constexpr void expm_i(const MatrixLike auto& A_, MatrixLike auto& R) {
 		using matrix = std::decay_t<decltype(A_)>;
