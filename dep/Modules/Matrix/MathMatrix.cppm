@@ -1,10 +1,9 @@
-#ifndef MATHMATRIX_HPP
-#define MATHMATRIX_HPP
-#pragma once
-
-#include "Matrix.hpp"
-
-namespace math_matrix {
+module;
+export module math_matrix;
+import std;
+import matrix;
+export namespace math_matrix {
+	using namespace matrix;
 	template<typename T, size_t SZ> using array_like_row = std::array<T, SZ>;
 	template<typename T, size_t SZ> using array_like_col = std::array<T, SZ>;
 	template<typename T, typename Alloc> using vector_like_row = std::vector<T, Alloc>;
@@ -52,6 +51,17 @@ namespace math_matrix {
 	template<typename T> concept VectorLike = is_vector_v<T>;
 	template<typename T> concept ScalarLike = arithmetic<T> || ComplexLike<T>;
 
+	template<typename T, typename = void> struct value_type { using type = T;	};
+	template<typename T> struct value_type<T, std::void_t<typename T::value_type>> {
+		using type = typename T::value_type;
+	};
+	template<typename T> using value_type_t = typename value_type<T>::type;
+
+	static_assert(std::is_same_v<value_type_t<Matrix<int>>, int>);
+	static_assert(std::is_same_v<value_type_t<std::complex<int>>, int>);
+	static_assert(std::is_same_v<value_type_t<double>, double>);
+
+
 	void print(const MatrixLike auto& mtx) {
 		int precision = 6;
 		std::ostream& os = std::cout;
@@ -72,7 +82,7 @@ namespace math_matrix {
 #if 0
 	auto operator/(const MatrixLike auto& lhs, const ScalarLike auto& rhs) {
 		auto new_mtx = lhs;
-		using mtx_value_type = std::decay_t<decltype(new_mtx)>::value_type;
+		using mtx_value_type = std::remove_cvref_t<decltype(new_mtx)>::value_type;
 		const auto val = static_cast<mtx_value_type>(rhs);
 		std::ranges::for_each(new_mtx.def_range(), [&val](auto& it) { it /= val; });
 		return new_mtx;
@@ -94,8 +104,8 @@ namespace math_matrix {
 #endif
 
 	auto operator-(const MatrixLike auto& lhs, const MatrixLike auto& rhs) {
-		using lhs_value_type = std::decay_t<decltype(lhs)>::value_type;
-		using rhs_value_type = std::decay_t<decltype(rhs)>::value_type;
+		using lhs_value_type = std::remove_cvref_t<decltype(lhs)>::value_type;
+		using rhs_value_type = std::remove_cvref_t<decltype(rhs)>::value_type;
 		using res_value_type = std::common_type_t<lhs_value_type, rhs_value_type>;
 		Matrix<res_value_type, std::pmr::polymorphic_allocator<res_value_type>> res(lhs.rows(), lhs.cols());
 
@@ -125,8 +135,8 @@ namespace math_matrix {
 
 	auto operator+(const MatrixLike auto& lhs, const MatrixLike auto& rhs) {
 		auto new_mtx = lhs;
-		using lhs_value_type = std::decay_t<decltype(new_mtx)>::value_type;
-		using rhs_value_type = std::decay_t<decltype(rhs)>::value_type;
+		using lhs_value_type = std::remove_cvref_t<decltype(new_mtx)>::value_type;
+		using rhs_value_type = std::remove_cvref_t<decltype(rhs)>::value_type;
 
 		auto l_b = new_mtx.begin();
 		auto l_e = new_mtx.end();
@@ -146,10 +156,10 @@ namespace math_matrix {
 #endif
 
 	inline auto operator*(const MatrixLike auto& lhs, const ScalarLike auto& rhs) {
-		using mtx_value_type = std::decay_t<decltype(lhs)>::value_type;
+		using mtx_value_type = std::remove_cvref_t<decltype(lhs)>::value_type;
 		Matrix<mtx_value_type> new_mtx(lhs); //lhs.rows(), lhs.cols());
-		const auto val = static_cast<mtx_value_type>(rhs);
-		std::ranges::for_each(new_mtx.def_range(), [&val](auto& it) { it *= val; });
+		// const auto val = static_cast<mtx_value_type>(rhs);
+		std::ranges::for_each(new_mtx.def_range(), [&rhs](auto& it) { it *= rhs; });
 		return new_mtx;
 	}
 
@@ -158,10 +168,10 @@ namespace math_matrix {
 	}
 
 	auto col_x_row(std::ranges::random_access_range auto&& col, std::ranges::random_access_range auto&& row, const auto& allocator) {
-		using col_value_type = std::ranges::range_value_t<std::decay_t<decltype(col)>>;
-		using row_value_type = std::ranges::range_value_t<std::decay_t<decltype(row)>>;
+		using col_value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(col)>>;
+		using row_value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(row)>>;
 		using res_value_type = std::common_type_t<col_value_type, row_value_type>;
-		using res_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, res_value_type>;
+		using res_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, res_value_type>;
 
 		Matrix<res_value_type, res_allocator_type> res(col.size(), row.size(), allocator);
 
@@ -194,7 +204,7 @@ namespace math_matrix {
 	}
 
 	auto row_x_col(const RowLike auto& row, const ColLike auto& col) {
-		using value_type = std::decay_t<decltype(row)>::value_type;
+		using value_type = std::remove_cvref_t<decltype(row)>::value_type;
 		constexpr auto zero = static_cast<value_type>(0);
 		auto result = zero;
 		for (size_t i = 0; i < row.size(); ++i) {
@@ -221,10 +231,10 @@ namespace math_matrix {
 		const ScalarLike auto& scalar,
 		const AllocatorLike auto& allocator
 	) {
-		using vec_value_type = std::decay_t<decltype(vec)>::value_type;
-		using scalar_value_type = std::decay_t<decltype(scalar)>;
+		using vec_value_type = std::remove_cvref_t<decltype(vec)>::value_type;
+		using scalar_value_type = std::remove_cvref_t<decltype(scalar)>;
 		using result_value_type = std::common_type_t<vec_value_type, scalar_value_type>;
-		using result_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, result_value_type>;
+		using result_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, result_value_type>;
 		std::vector<result_value_type, result_allocator_type> result(vec.begin(), vec.end());
 		vec_x_scalar_(result, scalar);
 		return result;
@@ -243,9 +253,9 @@ namespace math_matrix {
 
 	inline auto row_x_mtx(std::ranges::random_access_range auto&& row, const MatrixLike auto& mtx, const AllocatorLike auto& allocator) {
 		using row_value_type = std::ranges::range_value_t<decltype(row)>;
-		using mtx_value_type = std::decay_t<decltype(mtx)>::value_type;
+		using mtx_value_type = std::remove_cvref_t<decltype(mtx)>::value_type;
 		using res_value_type = std::common_type_t<row_value_type, mtx_value_type>;
-		using res_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, res_value_type>;
+		using res_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, res_value_type>;
 		Matrix<res_value_type, res_allocator_type> result_(1, mtx.cols());
 
 		const auto rows = mtx.rows();
@@ -298,7 +308,7 @@ namespace math_matrix {
 		using v1_value_type = std::ranges::range_value_t<decltype(v1)>;
 		using v2_value_type = std::ranges::range_value_t<decltype(v1)>;
 		using res_value_type = std::common_type_t<v1_value_type, v2_value_type>;
-		using res_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, res_value_type>;
+		using res_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, res_value_type>;
 		std::vector<res_value_type, res_allocator_type> result(v1.size());
 		vec_x_vec_(v1, v2, result);
 		return result;
@@ -325,10 +335,10 @@ namespace math_matrix {
 		std::ranges::random_access_range auto&& col,
 		const AllocatorLike auto& allocator
 	) {
-		using col_value_type = std::ranges::range_value_t<std::decay_t<decltype(col)>>;
-		using mtx_value_type = std::decay_t<decltype(mtx)>::value_type;
+		using col_value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(col)>>;
+		using mtx_value_type = std::remove_cvref_t<decltype(mtx)>::value_type;
 		using res_value_type = std::common_type_t<col_value_type, mtx_value_type>;
-		using res_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, res_value_type>;
+		using res_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, res_value_type>;
 		Matrix<res_value_type, res_allocator_type> res(mtx.rows(), 1, allocator);
 		auto cols = mtx.cols();
 		auto rows = mtx.rows();
@@ -364,9 +374,9 @@ namespace math_matrix {
 		const AllocatorLike auto& allocator
 	) {
 		using lhs_value_type = std::ranges::range_value_t<decltype(lhs)>;
-		using rhs_value_type = std::decay_t<decltype(rhs)>::value_type;
+		using rhs_value_type = std::remove_cvref_t<decltype(rhs)>::value_type;
 		using res_value_type = std::common_type_t<lhs_value_type, rhs_value_type>;
-		using res_allocator_type = rebind_allocator<std::decay_t<decltype(allocator)>, res_value_type>;
+		using res_allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, res_value_type>;
 
 		auto m = lhs.size();
 		auto n = rhs.cols();
@@ -394,8 +404,8 @@ namespace math_matrix {
 
 
 	auto operator*(const MatrixLike auto& A, const MatrixLike auto& B) {
-		using A_val_type = std::decay_t<decltype(A)>::value_type;
-		using B_val_type = std::decay_t<decltype(B)>::value_type;
+		using A_val_type = std::remove_cvref_t<decltype(A)>::value_type;
+		using B_val_type = std::remove_cvref_t<decltype(B)>::value_type;
 		using Result_type = std::common_type_t<A_val_type, B_val_type>;
 		return mult<Result_type>(A, B, std::pmr::polymorphic_allocator<std::byte>{});
 	}
@@ -427,13 +437,13 @@ namespace math_matrix {
 	template<typename T, typename U, typename W> concept MultiplyAddable = requires(T t, U u, W w) { w += t * u; };
 	constexpr void mult_(const MatrixLike auto& A, const MatrixLike auto& B, MatrixLike auto& C)
 		requires MultiplyAddable<
-			typename std::decay_t<decltype(A)>::value_type,
-				typename std::decay_t<decltype(B)>::value_type,
-				typename std::decay_t<decltype(C)>::value_type
+			typename std::remove_cvref_t<decltype(A)>::value_type,
+			typename std::remove_cvref_t<decltype(B)>::value_type,
+			typename std::remove_cvref_t<decltype(C)>::value_type
 		>
 	{
 		using size_type = std::size_t;
-		//A : 1 x n | B: n x 1
+		// A: 1 x n | B: n x 1
 		const auto M = A.rows(); // C.rows()
 		const auto N = B.cols(); // C.cols()
 		const auto K = A.cols(); // B.rows()
@@ -453,9 +463,9 @@ namespace math_matrix {
 
 	template<typename result_type>
 	inline auto mult(const MatrixLike auto& A, const MatrixLike auto& B, const auto& allocator) {
-		using A_value_type = std::decay_t<decltype(A)>::value_type;
-		using B_value_type = std::decay_t<decltype(B)>::value_type;
-		using C_alloc_type = rebind_allocator<std::decay_t<decltype(allocator)>, result_type>;
+		using A_value_type = typename std::remove_cvref_t<decltype(A)>::value_type;
+		using B_value_type = typename std::remove_cvref_t<decltype(B)>::value_type;
+		using C_alloc_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, result_type>;
 
 		const auto M = A.rows();
 		const auto N = B.cols();
@@ -468,14 +478,12 @@ namespace math_matrix {
 #if 1
 	template<typename result_type>
 	inline auto mult(const MatrixLike auto& A, const MatrixLike auto& B) {
-		using A_value_type = std::decay_t<decltype(A)>::value_type;
-		using A_alloc_type = std::decay_t<decltype(A)>::allocator_type;
-		using B_value_type = std::decay_t<decltype(B)>::value_type;
+		using A_value_type = typename std::remove_cvref_t<decltype(A)>::value_type;
+		using A_alloc_type = typename std::remove_cvref_t<decltype(A)>::allocator_type;
+		using B_value_type = typename std::remove_cvref_t<decltype(B)>::value_type;
 		using C_alloc_type = rebind_allocator<A_alloc_type, result_type>;
 		return mult<result_type>(A, B, C_alloc_type{});
 	}
 #endif
 
-} // ns
-
-#endif
+} // ns math_matrix

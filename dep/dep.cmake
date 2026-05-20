@@ -1,0 +1,5 @@
+include("${CMAKE_CURRENT_LIST_DIR}/Modules/Modules.cmake")
+#file(GLOB_RECURSE CMAKE_DEP_INCLUDE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/*/*.cmake")
+#foreach(cmake_file ${CMAKE_DEP_INCLUDE_FILES})
+#    include("${cmake_file}")
+#endforeach()
