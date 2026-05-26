@@ -1,4 +1,12 @@
-﻿module;
+﻿//===----------------------------------------------------------------------===//
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
+module;
+
+#include<assert.h>
+
 export module matrix;
 import std;
 
@@ -176,6 +184,9 @@ export namespace matrix {
 		public:
 			constexpr const_reference operator[](difference_type c) const { return *(row_data + c); }
 
+			constexpr auto operator<=>(const const_RowProxy& other) const { return row_data <=> other.row_data; }
+			constexpr auto operator==(const const_RowProxy& other) const { return row_data == other.row_data; }
+
 		public:
 			constexpr const_iterator begin() const noexcept { return const_iterator(row_data); }
 			constexpr const_iterator end() const noexcept { return const_iterator(row_data + cols); }
@@ -192,6 +203,7 @@ export namespace matrix {
 			constexpr const_reference back() const { return row_data[cols - 1]; }
 			constexpr size_type size() const noexcept { return cols; }
 			constexpr pointer data() const noexcept { return row_data; }
+			constexpr const_reference col(difference_type c) const noexcept { auto&& it = *this; return it[c]; }
 	};
 
 	static_assert(std::ranges::view<const_RowProxy<detail::tCont>>);
@@ -227,6 +239,9 @@ export namespace matrix {
 		public:
 			constexpr reference operator[](difference_type c) { return row_data[c];	}
 			constexpr const_reference operator[](difference_type c) const { return row_data[c]; }
+
+			constexpr auto operator==(const RowProxy& other) const { return row_data == other.row_data; }
+			constexpr auto operator<=>(const RowProxy& other) const { return row_data <=> other.row_data; }
 		
 		public:
 			constexpr iterator begin() noexcept { return iterator(row_data); }
@@ -248,6 +263,7 @@ export namespace matrix {
 			constexpr const_reference back() const { return row_data[cols - 1]; }
 			constexpr size_type size() const noexcept { return cols; }
 			constexpr pointer data() const noexcept { return row_data; }
+			constexpr reference col(difference_type c) noexcept { auto&& it = *this; return it[c]; }
 	};
 
 	static_assert(std::ranges::view<RowProxy<detail::tCont>>);
@@ -398,7 +414,7 @@ export namespace matrix {
 				: col_data(base), rows(r), stride(stride_) {
 			}
 
-			constexpr const_reference operator[](difference_type r) const {
+			constexpr const_reference operator[](difference_type r) const noexcept {
 				return *(col_data + r * stride);
 			}
 
@@ -418,6 +434,7 @@ export namespace matrix {
 			constexpr bool empty() const noexcept { return rows == 0; }
 			constexpr const_reference back() const { return *(col_data + (rows - 1) * stride); }
 			constexpr const_reference front() const { return *col_data; }
+			constexpr const_reference row(difference_type r) const noexcept { auto&& it = *this; return it[r]; }
 	};
 
 	template<typename Cont>
@@ -451,11 +468,11 @@ export namespace matrix {
 				: base_t(base, r, stride) { // col_data(base), rows(r), stride(stride_) {
 			}
 
-			constexpr const_reference operator[](difference_type r) const {
+			constexpr const_reference operator[](difference_type r) const noexcept {
 				return *(col_data + r * stride);
 			}
 
-			constexpr reference operator[](difference_type r) {
+			constexpr reference operator[](difference_type r) noexcept {
 				return *(col_data + r * stride);
 			}
 
@@ -478,6 +495,7 @@ export namespace matrix {
 			constexpr const_reference front() const { return *col_data; }
 			constexpr reference back() { return *(col_data + (rows - 1) * stride); }
 			constexpr const_reference back() const { return *(col_data + (rows - 1) * stride); }
+			constexpr reference row(difference_type r) noexcept { auto&& it = *this; return it[r]; }
 
 	#if 0
 		public:
@@ -1151,7 +1169,7 @@ export namespace matrix {
 			using reference = Cont::reference;
 			using const_reference = Cont::const_reference;
 
-			using allocator_type = Cont::allocator_type;
+			// using allocator_type = Cont::allocator_type;
 
 		public:
 	#if 0
@@ -1161,29 +1179,18 @@ export namespace matrix {
 			using const_reverse_iterator = reverse_iterator;
 	#endif
 
-			using col_iterator = matrix_const_col_iterator<Cont>;
-			using const_col_iterator = col_iterator;
-			using col_reverse_iterator = std::reverse_iterator<col_iterator>;
-			using const_col_reverse_iterator = col_reverse_iterator;
+			using const_col_iterator = matrix_const_col_iterator<Cont>;
+			using const_col_reverse_iterator = std::reverse_iterator<const_col_iterator>;
 
-			using row_iterator = submatrix_row_const_iterator<Cont>;
-			using const_row_iterator = row_iterator;
-			using row_reverse_iterator = std::reverse_iterator<row_iterator>;
-			using const_row_reverse_iterator = row_reverse_iterator;
+			using const_row_iterator = submatrix_row_const_iterator<Cont>;
+			using const_row_reverse_iterator = std::reverse_iterator<const_row_iterator>;
 
-			using diagonal_iterator = matrix_const_diagonal_iterator<Cont>;
-			using const_diagonal_iterator = diagonal_iterator;
-			using diagonal_reverse_iterator = std::reverse_iterator<diagonal_iterator>;
-			using const_diagonal_reverse_iterator = diagonal_reverse_iterator;
+			using const_diagonal_iterator = matrix_const_diagonal_iterator<Cont>;
+			using const_diagonal_reverse_iterator = std::reverse_iterator<const_diagonal_iterator>;
 
 		public:
-	#if 0
-			using const_col_proxy = const_ColProxy<Cont>;
-			using const_row_proxy = const_RowProxy<Cont>;
-	#else
 			using const_col_proxy = const_ColProxy<const_Submatrix>;
 			using const_row_proxy = const_RowProxy<const_Submatrix>;
-	#endif
 
 		protected:
 			Cont* cont = nullptr;
@@ -1193,6 +1200,30 @@ export namespace matrix {
 		public:
 			constexpr const_Submatrix() noexcept = default;
 			constexpr const_Submatrix(Cont* p, pointer f, pointer l) noexcept : cont(p), first(f), last(l) {}
+#if 0
+			constexpr const_Submatrix(const const_Submatrix& other) noexcept : cont(other.cont), first(other.first), last(other.last) {}
+			constexpr const_Submatrix(const_Submatrix&& other) noexcept : cont(other.cont), first(other.first), last(other.last) {
+				other.cont = nullptr;
+				other.first = nullptr;
+				other.last = nullptr;
+			}
+			constexpr const_Submatrix& operator=(const_Submatrix&& other) noexcept {
+				this->cont = other.cont;
+				this->first = other.first;
+				this->last = other.last;
+				other.cont = nullptr;
+				other.first = nullptr;
+				other.last = nullptr;
+				return *this;
+			}
+
+			constexpr const_Submatrix& operator=(const const_Submatrix& other) noexcept {
+				this->cont = other.cont;
+				this->first = other.first;
+				this->last = other.last;
+				return *this;
+			}
+#endif
 
 		public:
 			constexpr size_type rows() const noexcept {
@@ -1347,40 +1378,87 @@ export namespace matrix {
 	#endif
 
 			/* submatrix col iterator */
-			constexpr col_iterator col_begin() noexcept { return col_iterator(first, rows(), (*cont).cols()); }
-			constexpr col_iterator col_end() noexcept { return col_iterator(first + cols(), rows(), (*cont).cols()); }
 			constexpr const_col_iterator col_begin() const noexcept { return const_col_iterator(first, rows(), (*cont).cols()); }
 			constexpr const_col_iterator col_end() const noexcept { return const_col_iterator(first + cols(), rows(), (*cont).cols()); }
 			constexpr const_col_iterator col_cbegin() const noexcept { return const_col_iterator(col_begin()); }
 			constexpr const_col_iterator col_cend() const noexcept { return const_col_iterator(col_end()); }
-			constexpr col_reverse_iterator col_rbegin() const noexcept { return col_reverse_iterator(col_end()); }
-			constexpr col_reverse_iterator col_rend() const noexcept { return col_reverse_iterator(col_begin()); }
+			constexpr const_col_reverse_iterator col_rbegin() const noexcept { return const_col_reverse_iterator(col_cend()); }
+			constexpr const_col_reverse_iterator col_rend() const noexcept { return const_col_reverse_iterator(col_cbegin()); }
 			constexpr const_col_reverse_iterator col_crbegin() const noexcept { return const_col_reverse_iterator(col_cend()); }
 			constexpr const_col_reverse_iterator col_crend() const noexcept { return const_col_reverse_iterator(col_cbegin()); }
 
 			/* submatrix row iterator */
-			constexpr row_iterator row_begin() noexcept { return row_iterator(first, ((*cont).cols()), cols()); }
-			constexpr row_iterator row_end() noexcept { return row_iterator(first + rows() * ((*cont).cols()), ((*cont).cols()), cols()); }
 			constexpr const_row_iterator row_begin() const noexcept { return const_row_iterator(first, ((*cont).cols()), cols()); }
 			constexpr const_row_iterator row_end() const noexcept { return const_row_iterator(first + rows() * ((*cont).cols()), ((*cont).cols()), cols()); }
 			constexpr const_row_iterator row_cbegin() const noexcept { return const_row_iterator(row_begin()); }
 			constexpr const_row_iterator row_cend() const noexcept { return const_row_iterator(row_end()); }
-			constexpr row_reverse_iterator row_rbegin() noexcept { return row_reverse_iterator(row_end()); }
-			constexpr row_reverse_iterator row_rend() noexcept { return row_reverse_iterator(row_begin()); }
+			constexpr const_row_reverse_iterator row_rbegin() noexcept { return const_row_reverse_iterator(row_cend()); }
+			constexpr const_row_reverse_iterator row_rend() noexcept { return const_row_reverse_iterator(row_cbegin()); }
 			constexpr const_row_reverse_iterator row_crbegin() const noexcept { return const_row_reverse_iterator(row_cend()); }
 			constexpr const_row_reverse_iterator row_crend() const noexcept { return const_row_reverse_iterator(row_cbegin()); }
 
 			/* submatrix diagonal iterator */
-			constexpr diagonal_iterator diagonal_begin() noexcept { return diagonal_iterator(first, ((*cont).cols() + 1)); }
-			constexpr diagonal_iterator diagonal_end() noexcept { return diagonal_iterator(first + rows() * ((*cont).cols() + 1), ((*cont).cols() + 1)); }
 			constexpr const_diagonal_iterator diagonal_begin() const noexcept { return const_diagonal_iterator(first, ((*cont).cols() + 1)); }
 			constexpr const_diagonal_iterator diagonal_end() const noexcept { return const_diagonal_iterator(first + rows() * ((*cont).cols() + 1), ((*cont).cols() + 1)); }
 			constexpr const_diagonal_iterator diagonal_cbegin() const noexcept { return const_diagonal_iterator(diagonal_begin()); }
 			constexpr const_diagonal_iterator diagonal_cend() const noexcept { return const_diagonal_iterator(diagonal_end()); }
-			constexpr diagonal_reverse_iterator diagonal_rbegin() const noexcept { return diagonal_reverse_iterator(diagonal_end()); }
-			constexpr diagonal_reverse_iterator diagonal_rend() const noexcept { return diagonal_reverse_iterator(diagonal_begin()); }
+			constexpr const_diagonal_reverse_iterator diagonal_rbegin() const noexcept { return const_diagonal_reverse_iterator(diagonal_cend()); }
+			constexpr const_diagonal_reverse_iterator diagonal_rend() const noexcept { return const_diagonal_reverse_iterator(diagonal_cbegin()); }
 			constexpr const_diagonal_reverse_iterator diagonal_crbegin() const noexcept { return const_diagonal_reverse_iterator(diagonal_cend()); }
 			constexpr const_diagonal_reverse_iterator diagonal_crend() const noexcept { return const_diagonal_reverse_iterator(diagonal_cbegin()); }
+#if 0
+			/* submatrix subdiagonal iterator */
+			constexpr const_diagonal_iterator subdiagonal_begin(difference_type x) const noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				return const_diagonal_iterator(first, (cont_cols + 1));
+			}
+			constexpr const_diagonal_iterator subdiagonal_end(difference_type x) const noexcept { 
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto submatrix_rows = rows();
+				return const_diagonal_iterator(first + submatrix_rows * (cont_cols + 1), (cont_cols + 1));
+			}
+#else
+			/* submatrix subdiagonal iterator */
+			constexpr const_diagonal_iterator subdiagonal_begin(difference_type x) const noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return const_diagonal_iterator(first + start_offset, cont_cols + 1);
+			}
+
+			constexpr const_diagonal_iterator subdiagonal_end(difference_type x) const noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type count = n - (x >= 0 ? x : -x);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return const_diagonal_iterator(first + start_offset + count * (cont_cols + 1), cont_cols + 1);
+			}
+#endif
+			constexpr const_diagonal_iterator subdiagonal_cbegin(difference_type x) const noexcept {
+				return const_diagonal_iterator(subdiagonal_begin(x));
+			}
+			constexpr const_diagonal_iterator subdiagonal_cend(difference_type x) const noexcept {
+				return const_diagonal_iterator(subdiagonal_end(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_rbegin(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cend(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_rend(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cbegin(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_crbegin(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cend(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_crend(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cbegin(x));
+			}
+
 
 		public:
 			/* row */
@@ -1445,7 +1523,28 @@ export namespace matrix {
 			[[nodiscard]] constexpr auto diagonal_const_reverse_range() const noexcept {
 				return std::ranges::subrange(diagonal_crbegin(), diagonal_crend());
 			}
+#if 1
+			/* subdiagonal */
+			[[nodiscard]] constexpr auto subdiagonal_range(difference_type x) noexcept {
+				return std::ranges::subrange(subdiagonal_begin(x), subdiagonal_end(x));
+			}
 
+			[[nodiscard]] constexpr auto subdiagonal_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(x), subdiagonal_cend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(), subdiagonal_cend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_reverse_range(difference_type x) noexcept {
+				return std::ranges::subrange(subdiagonal_rbegin(x), subdiagonal_rend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_reverse_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_crbegin(x), subdiagonal_crend(x));
+			}
+#endif
 	};
 	// static_assert(std::ranges::view<const_Submatrix<detail::tCont>>);
 
@@ -1463,7 +1562,7 @@ export namespace matrix {
 			using typename base_t::reference;
 			using typename base_t::const_reference;
 
-			using typename base_t::allocator_type;
+			// using typename base_t::allocator_type;
 
 		public:
 	#if 0
@@ -1501,8 +1600,28 @@ export namespace matrix {
 
 		public:
 			/* todo ctors */
-			constexpr Submatrix() noexcept = delete;
+			constexpr Submatrix() noexcept = default;
 			constexpr Submatrix(Cont* p, pointer f, pointer l) noexcept : base_t(p, f, l) {}
+#if 0
+			constexpr Submatrix(const Submatrix& other) noexcept : Submatrix(other.cont, other.first, other.last) {};
+			constexpr Submatrix(Submatrix&& other) noexcept : Submatrix(other.cont, other.first, other.last) {};
+			constexpr Submatrix& operator=(Submatrix&& other) noexcept {
+				this->cont = other.cont;
+				this->first = other.first;
+				this->last = other.last;
+				other.cont = nullptr;
+				other.first = nullptr;
+				other.last = nullptr;
+				return *this;
+			}
+
+			constexpr Submatrix& operator=(const Submatrix& other) noexcept {
+				this->cont = other.cont;
+				this->first = other.first;
+				this->last = other.last;
+				return *this;
+			}
+#endif
 
 		public:
 			using base_t::rows;
@@ -1688,6 +1807,66 @@ export namespace matrix {
 			constexpr const_diagonal_reverse_iterator diagonal_crbegin() const noexcept { return const_diagonal_reverse_iterator(diagonal_cend()); }
 			constexpr const_diagonal_reverse_iterator diagonal_crend() const noexcept { return const_diagonal_reverse_iterator(diagonal_cbegin()); }
 
+			/* submatrix subdiagonal iterator */
+			constexpr diagonal_iterator subdiagonal_begin(difference_type x) noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return diagonal_iterator(first + start_offset, cont_cols + 1);
+			}
+			constexpr diagonal_iterator subdiagonal_end(difference_type x) noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type count = n - (x >= 0 ? x : -x);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return diagonal_iterator(first + start_offset + count * (cont_cols + 1), cont_cols + 1);
+			}
+			constexpr const_diagonal_iterator subdiagonal_begin(difference_type x) const noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return const_diagonal_iterator(first + start_offset, cont_cols + 1);
+			}
+			constexpr const_diagonal_iterator subdiagonal_end(difference_type x) const noexcept {
+				const auto& cnt = *cont;
+				const auto cont_cols = cnt.cols();
+				const auto n = rows();
+				//assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type count = n - (x >= 0 ? x : -x);
+				const difference_type start_offset = (x >= 0) ? x : -x * cont_cols;
+				return const_diagonal_iterator(first + start_offset + count * (cont_cols + 1), cont_cols + 1);
+			}
+			constexpr const_diagonal_iterator subdiagonal_cbegin(difference_type x) const noexcept {
+				return const_diagonal_iterator(subdiagonal_begin(x));
+			}
+			constexpr const_diagonal_iterator subdiagonal_cend(difference_type x) const noexcept {
+				return const_diagonal_iterator(subdiagonal_end(x));
+			}
+			constexpr diagonal_reverse_iterator subdiagonal_rbegin(difference_type x) noexcept {
+				return diagonal_reverse_iterator(subdiagonal_end(x));
+			}
+			constexpr diagonal_reverse_iterator subdiagonal_rend(difference_type x) noexcept {
+				return diagonal_reverse_iterator(subdiagonal_begin(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_rbegin(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_end(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_rend(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_begin(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_crbegin(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cend(x));
+			}
+			constexpr const_diagonal_reverse_iterator subdiagonal_crend(difference_type x) const noexcept {
+				return const_diagonal_reverse_iterator(subdiagonal_cbegin(x));
+			}
+
 		public:
 			/* row */
 			[[nodiscard]] constexpr auto row_range() noexcept {
@@ -1752,6 +1931,27 @@ export namespace matrix {
 				return std::ranges::subrange(diagonal_crbegin(), diagonal_crend());
 			}
 
+			/* subdiagonal */
+			[[nodiscard]] constexpr auto subdiagonal_range(difference_type x) noexcept {
+				return std::ranges::subrange(subdiagonal_begin(x), subdiagonal_end(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(x), subdiagonal_cend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(x), subdiagonal_cend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_reverse_range(difference_type x) noexcept {
+				return std::ranges::subrange(subdiagonal_rbegin(x), subdiagonal_rend(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_reverse_range(difference_type x) const noexcept {
+				return std::ranges::subrange(subdiagonal_crbegin(x), subdiagonal_crend(x));
+			}
+
 	};
 	// static_assert(std::ranges::view<Submatrix<detail::tCont>>);
 	template<typename T> constexpr auto maybe_null(T ptr) { return ptr ? std::addressof(*ptr) : nullptr; }
@@ -1808,30 +2008,33 @@ export namespace matrix {
 			using diagonal_const_reverse_iterator = std::reverse_iterator<diagonal_const_iterator>;
 
 		private:
-			constexpr Matrix(const allocator_type& allocator) : _allocator(allocator) {}
+			constexpr Matrix(const allocator_type& allocator) noexcept : _allocator(allocator) {}
+
 		public:
 			constexpr Matrix(size_type rows, size_type cols, const allocator_type& allocator = {})
 				: Matrix(allocator) 
 			{
+				auto n = rows * cols;
+				pointer x = nullptr;
+				if (n > 0) {
+					x = allocator_traits::allocate(_allocator, n);
+					for (difference_type i = 0; i < n; ++i) {
+						allocator_traits::construct(_allocator, (x + i));
+					}
+				}
+				_data = x;
 				_rows = rows;
 				_cols = cols;
-				auto n = rows * cols;
-				if (n > 0) {
-					_data = allocator_traits::allocate(_allocator, n);
-					for (size_type i = 0; i < n; ++i) {
-						allocator_traits::construct(_allocator, (_data + i));
-					}
-				}	else {
-					_data = nullptr;
-				}
 			}
 
 			template<typename MatrixType>
 			Matrix(const const_Submatrix<MatrixType>& submatrix, const allocator_type& allocator = {}) : Matrix(submatrix.rows(), submatrix.cols(), allocator) {
 				auto&& it = *this;
-				for (size_type i = 0; i < _rows; ++i) {
-					for (size_type j = 0; j < _cols; ++j) {
-						it.get_elem(i, j) = submatrix[i][j];
+				for (difference_type i = 0; i < _rows; ++i) {
+					auto cri = it.row(i);
+					auto sri = submatrix.row(i);
+					for (difference_type j = 0; j < _cols; ++j) {
+						cri[j] = sri[j];
 					}
 				}
 			}
@@ -1839,40 +2042,42 @@ export namespace matrix {
 			template<typename MatrixType>
 			Matrix(const Submatrix<MatrixType>& submatrix, const allocator_type& allocator = {}) : Matrix(submatrix.rows(), submatrix.cols(), allocator) {
 				auto&& it = *this;
-				for (size_type i = 0; i < _rows; ++i) {
-					for (size_type j = 0; j < _cols; ++j) {
-						it.get_elem(i, j) = submatrix[i][j];
+				for (difference_type i = 0; i < _rows; ++i) {
+					auto cri = it.row(i);
+					auto sri = submatrix.row(i);
+					for (difference_type j = 0; j < _cols; ++j) {
+						cri[j] = sri[j];
 					}
 				}
 			}
 
 	#if 1
 			Matrix(const Matrix& rhs) : Matrix(allocator_type{}) {
+				const auto n = rhs._rows * rhs._cols;
+				pointer x = nullptr;
+				if (n > 0) {
+					x = allocator_traits::allocate(_allocator, n);
+					for (difference_type i = 0; i < n; ++i) {
+						allocator_traits::construct(_allocator, std::addressof(x[i]), rhs._data[i]);
+					}
+				}
+				_data = x;
 				_rows = rhs._rows;
 				_cols = rhs._cols;
-				const auto n = _rows * _cols;
-				if (n > 0) {
-					_data = allocator_traits::allocate(_allocator, n);
-					for (size_type i = 0; i < n; ++i) {
-						allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
-					}
-				} else {
-					_data = nullptr;
-				}
 			}
 
 			Matrix(const Matrix& rhs, const allocator_type& allocator) : Matrix(allocator) {
+				const auto n = rhs._rows * rhs._cols;
+				pointer x = nullptr;
+				if (n > 0) {
+					x = allocator_traits::allocate(_allocator, n);
+					for (size_type i = 0; i < n; ++i) {
+						allocator_traits::construct(_allocator, std::addressof(x[i]), rhs._data[i]);
+					}
+				}
+				_data = x;
 				_rows = rhs._rows;
 				_cols = rhs._cols;
-				const auto n = _rows * _cols;
-				if (n > 0) {
-					_data = allocator_traits::allocate(_allocator, n);
-					for (size_type i = 0; i < n; ++i) {
-						allocator_traits::construct(_allocator, &_data[i], rhs._data[i]);
-					}
-				}	else {
-					_data = nullptr;
-				}
 			}
 
 			Matrix(Matrix&& rhs) noexcept : Matrix(rhs.get_allocator()) {
@@ -1891,10 +2096,7 @@ export namespace matrix {
 			Matrix& operator=(const Matrix& rhs) {
 				if (&rhs == this) { return *this; }
 				if (rhs.rows() == rows() && rhs.cols() == cols()) {
-					const auto n = _rows * _cols;
-					for (size_type i = 0; i < n; ++i) {
-						_data[i] = rhs._data[i];
-					}
+					std::copy(rhs.begin(), rhs.end(), begin());
 				}	else {
 					{
 						if (_data) {
@@ -1903,8 +2105,8 @@ export namespace matrix {
 								allocator_traits::destroy(_allocator, &_data[i]);
 							}
 							allocator_traits::deallocate(_allocator, _data, n);
-							_data = nullptr;
 						}
+						_data = nullptr;
 						_cols = 0;
 						_rows = 0;
 					}
@@ -1938,11 +2140,11 @@ export namespace matrix {
 						if (_data) {
 							const auto n = _rows * _cols;
 							for (size_type i = 0; i < n; ++i) {
-								allocator_traits::destroy(_allocator, &_data[i]);
+								allocator_traits::destroy(_allocator, std::addressof(_data[i]));
 							}
-							allocator_traits::deallocate(_allocator, _data, n);
-							_data = nullptr;
+							allocator_traits::deallocate(_allocator, _data, n);	
 						}
+						_data = nullptr;
 						_cols = 0;
 						_rows = 0;
 					}
@@ -1951,7 +2153,7 @@ export namespace matrix {
 					if (n > 0) {
 						_data = allocator_traits::allocate(_allocator, n);
 						for (size_type i = 0; i < n; ++i) {
-							allocator_traits::construct(_allocator, &_data[i], static_cast<value_type>(rhs._data[i]));
+							allocator_traits::construct(_allocator, std::addressof(_data[i]), static_cast<value_type>(rhs._data[i]));
 						}
 					}	else {
 						_data = nullptr;
@@ -1982,8 +2184,8 @@ export namespace matrix {
 						allocator_traits::destroy(_allocator, _data + i);
 					}
 					allocator_traits::deallocate(_allocator, _data, n);
-					_data = nullptr;
 				}
+				_data = nullptr;
 				_cols = 0;
 				_rows = 0;
 			}
@@ -2018,7 +2220,7 @@ export namespace matrix {
 
 			constexpr size_type get_elem_row_index(const value_type& elem) const noexcept {
 				auto x = std::addressof(elem);
-				// if (((x < _data) || (x >= _data + _rows * _cols))) { throw std::runtime_error("elem Out of bound"); };
+				assert(!((x < _data) || (x >= _data + _rows * _cols)));
 				auto z = static_cast<size_type>(x - _data);
 				return (z / _cols);
 			}
@@ -2032,7 +2234,7 @@ export namespace matrix {
 
 			constexpr size_type get_elem_col_index(const value_type& elem) const noexcept {
 				auto x = std::addressof(elem);
-				// if(((x < _data) || (x >= _data + _rows * _cols))) { throw std::runtime_error("elem Out of bound"); };
+				assert(!((x < _data) || (x >= _data + _rows * _cols)));
 				auto z = static_cast<size_type>(x - _data);
 				return (z % _cols);
 			}
@@ -2166,77 +2368,179 @@ export namespace matrix {
 			[[nodiscard]] constexpr col_const_reverse_iterator col_crbegin() const noexcept { return col_rbegin(); }
 			[[nodiscard]] constexpr col_const_reverse_iterator col_crend() const noexcept { return col_rend(); }
 
+
 			/* diagonal */
-			[[nodiscard]] constexpr diagonal_iterator diagonal_begin() {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_iterator diagonal_begin() noexcept {
+				assert(is_square());
 				return diagonal_iterator(_data, _rows + 1u);
 			}
 
-			[[nodiscard]] constexpr diagonal_const_iterator diagonal_begin() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_iterator diagonal_begin() const noexcept {
+				assert(is_square());
 				return diagonal_const_iterator(_data, _rows + 1u);
 			}
 
-			[[nodiscard]] constexpr diagonal_iterator diagonal_end() {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
-				// return diagonal_iterator(_data + (_rows * _cols + _rows), _rows + 1u);
+			[[nodiscard]] constexpr diagonal_iterator diagonal_end() noexcept {
+				assert(is_square());
 				return diagonal_iterator(_data + (_rows * _cols + _rows), _rows + 1u);
 			}
 
-			[[nodiscard]] constexpr diagonal_const_iterator diagonal_end() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_iterator diagonal_end() const noexcept{
+				assert(is_square());
 				return diagonal_const_iterator(_data + (_rows * _cols + _rows), _rows + 1u);
 			}
 
-			[[nodiscard]] constexpr diagonal_reverse_iterator diagonal_rbegin() {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_reverse_iterator diagonal_rbegin() noexcept {
+				assert(is_square());
 				return diagonal_reverse_iterator(diagonal_end());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_rbegin() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_rbegin() const noexcept {
+				assert(is_square());
 				return diagonal_const_reverse_iterator(diagonal_end());
 			}
 
-			[[nodiscard]] constexpr diagonal_reverse_iterator diagonal_rend() {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_reverse_iterator diagonal_rend() noexcept {
+				assert(is_square());
 				return diagonal_reverse_iterator(diagonal_begin());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_rend() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_rend() const noexcept {
+				assert(is_square());
 				return diagonal_const_reverse_iterator(diagonal_begin());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_iterator diagonal_cbegin() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_iterator diagonal_cbegin() const noexcept {
+				assert(is_square());
 				return diagonal_const_iterator(diagonal_begin());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_iterator diagonal_cend() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_iterator diagonal_cend() const noexcept {
+				assert(is_square());
 				return diagonal_const_iterator(diagonal_end());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crbegin() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crbegin() const noexcept {
+				assert(is_square());
 				return diagonal_const_reverse_iterator(diagonal_rbegin());
 			}
 
-			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crend() const {
-				if (!is_square()) { throw std::runtime_error("diagonal iterator usable only in square matrices"); }
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator diagonal_crend() const noexcept {
+				assert(is_square());
 				return diagonal_const_reverse_iterator(diagonal_rend());
 			}
 
 
+			/* subdiagonal */
+			[[nodiscard]] constexpr diagonal_iterator subdiagonal_begin(difference_type x) noexcept {
+				assert(is_square());
+#if 0
+				return diagonal_iterator(_data + x, _rows + 1u);
+#else
+				const difference_type n = _rows;
+				assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type start_offset = (x >= 0) ? x : -x * n;
+				return diagonal_iterator(_data + start_offset, n + 1);
+#endif
+			}
+
+			[[nodiscard]] constexpr diagonal_const_iterator subdiagonal_begin(difference_type x) const noexcept {
+				assert(is_square());
+#if 0
+				return diagonal_const_iterator(_data + x, _rows + 1u);
+#else
+				const difference_type n = _rows;
+				assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type start_offset = (x >= 0) ? x : -x * n;
+				return diagonal_const_iterator(_data + start_offset, n + 1);
+#endif
+			}
+
+			[[nodiscard]] constexpr diagonal_iterator subdiagonal_end(difference_type x) noexcept {
+				assert(is_square());
+#if 0
+				assert(x >= 0 && x < _rows);
+				const difference_type n = _rows;
+				const difference_type count = n - x;
+				const difference_type step = n + 1;
+				return diagonal_iterator(_data + x + count * step, step);
+#else
+				assert(is_square());
+				const difference_type n = _rows;
+				assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type count = n - (x >= 0 ? x : -x);
+				const difference_type start_offset = (x >= 0) ? x : -x * n;
+				return diagonal_iterator(_data + start_offset + count * (n + 1), n + 1);
+#endif
+				// return diagonal_iterator(_data + (_rows * _cols + _rows), _rows + 1u);
+			}
+
+			[[nodiscard]] constexpr diagonal_const_iterator subdiagonal_end(difference_type x) const noexcept {
+				assert(is_square());
+#if 0
+				assert(x >= 0 && x < _rows);
+				const difference_type n = _rows;
+				const difference_type count = n - x;
+				const difference_type step = n + 1;
+				return diagonal_const_iterator(_data + x + count * step, step);
+#else
+				assert(is_square());
+				const difference_type n = _rows;
+				assert(x >= -(n - 1) && x <= n - 1);
+				const difference_type count = n - (x >= 0 ? x : -x);
+				const difference_type start_offset = (x >= 0) ? x : -x * n;
+				return diagonal_const_iterator(_data + start_offset + count * (n + 1), n + 1);
+#endif
+			}
+
+			[[nodiscard]] constexpr diagonal_reverse_iterator subdiagonal_rbegin(difference_type x) noexcept {
+				assert(is_square());
+				return diagonal_reverse_iterator(subdiagonal_end(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator subdiagonal_rbegin(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_reverse_iterator(subdiagonal_end(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_reverse_iterator subdiagonal_rend(difference_type x) noexcept {
+				assert(is_square());
+				return diagonal_reverse_iterator(subdiagonal_begin(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator subdiagonal_rend(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_reverse_iterator(subdiagonal_begin(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_iterator subdiagonal_cbegin(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_iterator(subdiagonal_begin(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_iterator subdiagonal_cend(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_iterator(subdiagonal_end(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator subdiagonal_crbegin(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_reverse_iterator(subdiagonal_rbegin(x));
+			}
+
+			[[nodiscard]] constexpr diagonal_const_reverse_iterator subdiagonal_crend(difference_type x) const noexcept {
+				assert(is_square());
+				return diagonal_const_reverse_iterator(subdiagonal_rend(x));
+			}
+
 		public:
 			[[nodiscard]] constexpr col_proxy col(size_type j) noexcept {
-				// if (j >= _cols) throw std::out_of_range("Column index out of range");
+				assert(!(j >= _cols));
 				return col_proxy{_data + j, _rows, _cols};
 			}
 
 			[[nodiscard]] constexpr const_col_proxy col(size_type j) const noexcept {
-				// if (j >= _cols) throw std::out_of_range("Column index out of range");
+				assert(!(j >= _cols));
 				return const_col_proxy{_data + j, _rows, _cols};
 			}
 
@@ -2325,24 +2629,49 @@ export namespace matrix {
 			[[nodiscard]] constexpr auto diagonal_const_reverse_range() const noexcept {
 				return std::ranges::subrange(diagonal_crbegin(), diagonal_crend());
 			}
+
+			/* off diagonal iterator */
+			[[nodiscard]] constexpr auto subdiagonal_range(difference_type x) noexcept {
+				return std::ranges::subrange(subdiagonal_begin(x), subdiagonal_end(x));
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_range() const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(), subdiagonal_cend());
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_range() const noexcept {
+				return std::ranges::subrange(subdiagonal_cbegin(), subdiagonal_cend());
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_reverse_range() noexcept {
+				return std::ranges::subrange(subdiagonal_rbegin(), subdiagonal_rend());
+			}
+
+			[[nodiscard]] constexpr auto subdiagonal_const_reverse_range() const noexcept {
+				return std::ranges::subrange(subdiagonal_crbegin(), subdiagonal_crend());
+			}
 		
 		public:
 			constexpr row_proxy operator[](size_type r) noexcept {
 				// if (r >= _rows) throw std::out_of_range("Row index out of range");
+				assert(!(r >= _rows));
 				return row_proxy{ _data + r * _cols, _cols };
 			}
 
 			constexpr const const_row_proxy operator[](size_type r) const noexcept {
 				// if (r >= _rows) throw std::out_of_range("Row index out of range");
+				assert(!(r >= _rows));
 				return const_row_proxy{ _data + r * _cols, _cols };
 			}
 
 			constexpr reference at(size_type r, size_type c) {
-				if (r >= _rows || c >= _cols) throw std::out_of_range("Index out of range");
+				// if (r >= _rows || c >= _cols) throw std::out_of_range("Index out of range");
+				assert(!(r >= _rows || c >= _cols));
 				return _data[r * _cols + c];
 			}
 			constexpr const_reference at(size_type r, size_type c) const {
-				if (r >= _rows || c >= _cols) throw std::out_of_range("Index out of range");
+				// if (r >= _rows || c >= _cols) throw std::out_of_range("Index out of range");
+				assert(!(r >= _rows || c >= _cols));
 				return _data[r * _cols + c];
 			}
 
@@ -2357,11 +2686,11 @@ export namespace matrix {
 				const auto n = cols();
 
 				os << std::fixed << std::setprecision(precision);
-				auto&& it = *this;
+				// auto&& it = *this;
 				for (size_type i = 0; i < m; ++i) {
 					os << "[ ";
 					for (size_type j = 0; j < n; ++j) {
-						os << std::setw(10) << it[i][j];
+						os << std::setw(10) << (*this)[i][j];
 						if (j + 1 < n) os << ' ';
 					}
 					os << " ]" << std::endl;

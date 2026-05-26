@@ -1,11 +1,19 @@
+//===----------------------------------------------------------------------===//
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
 module;
+
+#include<assert.h>
+
 export module math_matrix;
 import std;
 import matrix;
 export namespace math_matrix {
 	using namespace matrix;
-	template<typename T, size_t SZ> using array_like_row = std::array<T, SZ>;
-	template<typename T, size_t SZ> using array_like_col = std::array<T, SZ>;
+	template<typename T, std::size_t SZ> using array_like_row = std::array<T, SZ>;
+	template<typename T, std::size_t SZ> using array_like_col = std::array<T, SZ>;
 	template<typename T, typename Alloc> using vector_like_row = std::vector<T, Alloc>;
 	template<typename T, typename Alloc> using vector_like_col = std::vector<T, Alloc>;
 
@@ -20,7 +28,7 @@ export namespace math_matrix {
 	
 	template<typename T> struct is_vector : std::false_type {};
 	template<typename T, typename Alloc> struct is_vector<std::vector<T, Alloc>> : std::true_type {};
-	template<typename T, size_t SZ> struct is_vector<std::array<T, SZ>> : std::true_type {};
+	template<typename T, std::size_t SZ> struct is_vector<std::array<T, SZ>> : std::true_type {};
 	template<typename T> inline constexpr bool is_vector_v = is_vector<T>::value;
 
 	template<typename T> concept arithmetic = std::is_arithmetic_v<T>;
@@ -68,9 +76,9 @@ export namespace math_matrix {
 		const auto m = mtx.rows();
 		const auto n = mtx.cols();
 		os << std::fixed << std::setprecision(precision);
-		for (size_t i = 0; i < m; ++i) {
+		for (std::size_t i = 0; i < m; ++i) {
 			os << "[ ";
-			for (size_t j = 0; j < n; ++j) {
+			for (std::size_t j = 0; j < n; ++j) {
 				os << std::setw(10) << mtx[i][j];
 				if (j + 1 < n) os << ' ';
 			}
@@ -92,9 +100,9 @@ export namespace math_matrix {
 		auto r = mtx.rows();
 		auto c = mtx.cols();
 		auto tmp = mtx;
-		for (size_t i = 0; i < r; ++i) {
+		for (std::size_t i = 0; i < r; ++i) {
 			auto&& tmp_row_i = tmp.row(i);
-			for (size_t j = 0; j < c; ++j) {
+			for (std::size_t j = 0; j < c; ++j) {
 				auto& x = tmp_row_i[j];
 				x = x / scalar;
 			}
@@ -108,7 +116,8 @@ export namespace math_matrix {
 		using rhs_value_type = std::remove_cvref_t<decltype(rhs)>::value_type;
 		using res_value_type = std::common_type_t<lhs_value_type, rhs_value_type>;
 		Matrix<res_value_type, std::pmr::polymorphic_allocator<res_value_type>> res(lhs.rows(), lhs.cols());
-
+		assert(lhs.rows() == rhs.rows());
+		assert(lhs.cols() == rhs.cols());
 #if 0
 		auto l_b = res.begin();
 		auto l_e = res.end();
@@ -120,11 +129,11 @@ export namespace math_matrix {
 #else
 		auto cols = res.cols();
 		auto rows = res.rows();
-		for (size_t i = 0; i < rows; ++i) {
+		for (std::size_t i = 0; i < rows; ++i) {
 			auto n_row = res.row(i);
 			auto l_row = lhs.row(i);
 			auto r_row = rhs.row(i);
-			for (size_t j = 0; j < cols; ++j) {
+			for (std::size_t j = 0; j < cols; ++j) {
 				n_row[j] = l_row[j] - r_row[j];
 			}
 		}
@@ -137,7 +146,10 @@ export namespace math_matrix {
 		auto new_mtx = lhs;
 		using lhs_value_type = std::remove_cvref_t<decltype(new_mtx)>::value_type;
 		using rhs_value_type = std::remove_cvref_t<decltype(rhs)>::value_type;
-
+#ifndef NDEBUG
+		assert(lhs.cols() == rhs.cols());
+		assert(lhs.rows() == rhs.rows());
+#endif
 		auto l_b = new_mtx.begin();
 		auto l_e = new_mtx.end();
 		auto r_b = rhs.begin();
@@ -207,7 +219,7 @@ export namespace math_matrix {
 		using value_type = std::remove_cvref_t<decltype(row)>::value_type;
 		constexpr auto zero = static_cast<value_type>(0);
 		auto result = zero;
-		for (size_t i = 0; i < row.size(); ++i) {
+		for (std::size_t i = 0; i < row.size(); ++i) {
 			const auto& fst = row[i];
 			const auto& snd = col[i];
 			result += fst * snd;
@@ -271,9 +283,9 @@ export namespace math_matrix {
 			}
 		}
 #else
-		for (size_t i = 0; i < rows; ++i) {
+		for (std::size_t i = 0; i < rows; ++i) {
 			auto mtx_row = mtx.row(i);
-			for (size_t j = 0; j < cols; ++j) {
+			for (std::size_t j = 0; j < cols; ++j) {
 				result[j] += row[i] * mtx_row[j];
 			}
 		}
@@ -344,10 +356,10 @@ export namespace math_matrix {
 		auto rows = mtx.rows();
 		auto rcol = res.col(0);
 
-		for (size_t i = 0; i < rows; ++i) {
+		for (std::size_t i = 0; i < rows; ++i) {
 			auto mtx_row = mtx.row(i);
 			auto& col_i = rcol[i];
-			for (size_t j = 0; j < cols; ++j) {
+			for (std::size_t j = 0; j < cols; ++j) {
 				auto& col_j = *(col.begin() + j);
 				col_i += mtx_row[j] * col_j;
 			}
@@ -384,11 +396,11 @@ export namespace math_matrix {
 		Matrix<res_value_type, res_allocator_type> res(m, n, allocator);
 
 		auto l_b = lhs.begin();
-		for (size_t i = 0; i < m; ++i) {
+		for (std::size_t i = 0; i < m; ++i) {
 			auto& x = *(l_b + i);
 			auto rhs_row = rhs[i];
 			auto res_row = res[i];
-			for (size_t j = 0; j < n; ++j) {
+			for (std::size_t j = 0; j < n; ++j) {
 				res_row[j] = x * rhs_row[j];
 			}
 		}
@@ -402,14 +414,6 @@ export namespace math_matrix {
 	}
 #endif
 
-
-	auto operator*(const MatrixLike auto& A, const MatrixLike auto& B) {
-		using A_val_type = std::remove_cvref_t<decltype(A)>::value_type;
-		using B_val_type = std::remove_cvref_t<decltype(B)>::value_type;
-		using Result_type = std::common_type_t<A_val_type, B_val_type>;
-		return mult<Result_type>(A, B, std::pmr::polymorphic_allocator<std::byte>{});
-	}
-
 	template<typename T, typename U>
 	constexpr auto dummy_mult(const Matrix<T>& A, const Matrix<U>& B)
 		-> Matrix<std::common_type_t<T, U>>
@@ -418,7 +422,7 @@ export namespace math_matrix {
 		if (A.cols() != B.rows()) {
 			throw std::runtime_error("Matrix dimensions do not match for multiplication");
 		}
-		using size_type = size_t;
+		using size_type = std::size_t;
 		auto result = Matrix<ResultType>(A.rows(), B.cols());
 
 		for (size_type i = 0; i < A.rows(); ++i) {
@@ -447,6 +451,13 @@ export namespace math_matrix {
 		const auto M = A.rows(); // C.rows()
 		const auto N = B.cols(); // C.cols()
 		const auto K = A.cols(); // B.rows()
+		assert(
+			(A.rows() == C.rows())
+			&&
+			(B.cols() == C.cols())
+			&&
+			(A.cols() == B.rows())
+		);
 
 		for (size_type i = 0; i < N; ++i) {
 			auto&& c = C.col(i);
@@ -485,5 +496,12 @@ export namespace math_matrix {
 		return mult<result_type>(A, B, C_alloc_type{});
 	}
 #endif
+
+	auto operator*(const MatrixLike auto& A, const MatrixLike auto& B) {
+		using A_val_type = typename std::remove_cvref_t<decltype(A)>::value_type;
+		using B_val_type = typename std::remove_cvref_t<decltype(B)>::value_type;
+		using Result_type = std::common_type_t<A_val_type, B_val_type>;
+		return mult<Result_type>(A, B, std::pmr::polymorphic_allocator<std::byte>{});
+	}
 
 } // ns math_matrix

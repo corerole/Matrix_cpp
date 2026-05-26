@@ -1,4 +1,12 @@
-﻿module;
+﻿//===----------------------------------------------------------------------===//
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+//===----------------------------------------------------------------------===//
+
+module;
+
+#include <assert.h>
 
 export module matrix_helpers;
 
@@ -11,7 +19,7 @@ using namespace math_matrix;
 
 namespace test_utils {
 	using value_type = long double;
-	using size_type = size_t;
+	using size_type = std::size_t;
 
 	template<typename T> using distribution = std::conditional_t<
 		std::floating_point<T>,
@@ -111,28 +119,17 @@ export namespace utils {
 		return std::sqrt(std::forward<std::remove_cvref_t<decltype(val)>>(val));
 	}
 
-#if 0
-	// trubles with ADL
-	constexpr void swap_r(std::ranges::input_range auto&& fst, std::ranges::input_range auto&& snd) {
-		auto sb = snd.begin();
-		std::ranges::for_each(fst, [&sb](auto&& it) {
-			auto& sbr = *sb;
-			std::swap(it, sbr);
-			++sb;
-		});
-	}
-#else
-	void swap_r(std::ranges::input_range auto&& fst, std::ranges::input_range auto&& snd) {
-		auto fb = fst.begin();
-		auto fe = fst.end();
-		auto sb = snd.begin();
-		for (; fb != fe; ++fb, ++sb) {
-			std::iter_swap(fb, sb);
+	constexpr void swap_r(
+		std::ranges::forward_range auto&& fst,
+		std::ranges::forward_range auto&& snd
+	) {
+		auto&& v = std::views::zip(fst, snd);
+		for (auto&& it : v) {
+			auto& [f, s] = it;
+			std::swap(f, s);
 		}
 	}
-#endif
-
-}
+} // ns utils
 
 export namespace matrix_helpers {
 	constexpr void transpose_(const MatrixLike auto& A, MatrixLike auto& result) {
@@ -164,7 +161,7 @@ export namespace matrix_helpers {
 		return transpose(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto conj_transpose(const MatrixLike auto& mtx) {
+	auto conj_transpose(const MatrixLike auto& mtx) {
 		using value_type = typename std::remove_cvref_t<decltype(mtx)>::value_type;
 		static_assert(ComplexLike<value_type>);
 		MatrixLike auto res = transpose(mtx);
@@ -179,7 +176,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto identity(size_t n, const AllocatorLike auto& allocator) {
+	inline auto identity(std::size_t n, const AllocatorLike auto& allocator) {
 		using Alloc = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		Matrix<value_type, Alloc> result(n, n, allocator);
 		identity_(result);
@@ -187,7 +184,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto identity(size_t n) {
+	inline auto identity(std::size_t n) {
 		return identity<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -257,6 +254,7 @@ export namespace matrix_helpers {
 		return scale_matrix(A, alloc{});
 	}
 
+#if 0
 	// return non-abs val&
 	constexpr auto& max_abs(utils::arithmetic_input_range auto&& r) {
 		using value_type = std::ranges::range_value_t<decltype(r)>;
@@ -267,6 +265,12 @@ export namespace matrix_helpers {
 		});
 		return *max_val;
 	}
+#else
+	constexpr auto& max_abs(std::ranges::forward_range auto&& r) {
+		auto iter = std::ranges::max_element(r, {}, [](auto&& it) { return std::abs(it); });
+		return *iter;
+	}
+#endif
 
 	constexpr auto euclid_norm(std::ranges::forward_range auto&& r) {
 		using value_type = typename std::ranges::range_value_t<decltype(r)>;
@@ -339,7 +343,7 @@ export namespace matrix_helpers {
 			std::ranges::for_each(x_row, func);
 			std::ranges::for_each(tmp_row, func);
 
-			for (size_t i = 0; i < X.rows(); ++i) {
+			for (std::size_t i = 0; i < X.rows(); ++i) {
 				if (i == elem_col_idx) { continue; }
 				auto factor = tmp[i][elem_col_idx];
 				add_scaled_row(X.row(i), x_row, factor);
@@ -347,7 +351,7 @@ export namespace matrix_helpers {
 			}
 		}
 
-		return tmp; //std::make_pair(tmp, X);
+		return X; //std::make_pair(tmp, X);
 	}
 	
 	inline auto matrix_euclid_col_norm(const MatrixLike auto& A, const auto& alloc) {
@@ -534,11 +538,10 @@ export namespace matrix_helpers {
 			std::ranges::input_range auto&& src,
 			std::ranges::input_range auto&& dst
 		) {
-				auto s_b = src.begin();
-				auto s_e = src.end();
-				auto d_b = dst.begin();
-				for (; s_b != s_e; ++s_b, ++d_b) {
-					*d_b = *s_b;
+				auto v =  std::views::zip(src, dst);
+				for (auto&& it : v) {
+					auto&& [s, d] = it;
+					d = s;
 				}
 		};
 
@@ -561,9 +564,9 @@ export namespace matrix_helpers {
 
 				auto current_to_last = std::ranges::subrange(mtx.row_begin() + elem_row_idx, mtx.row_end());
 				auto pred = [elem_col_idx](auto&& row) {
-					using value_type_2 = std::remove_cvref_t<decltype(row)>::value_type;
-					if constexpr (ComplexLike<value_type_2>) {
-						constexpr auto eps = std::numeric_limits<value_type_2::value_type>::epsilon();
+					using local_value_type = typename std::remove_cvref_t<decltype(row)>::value_type;
+					if constexpr (ComplexLike<local_value_type>) {
+						constexpr auto eps = std::numeric_limits<typename local_value_type::value_type>::epsilon();
 						return std::abs(row[elem_col_idx]) < eps ? true : false;
 					}	else {
 						return row[elem_col_idx] == 0 ? true : false;
@@ -578,7 +581,11 @@ export namespace matrix_helpers {
 		};
 
 		int sign = 1;
-
+#if 1
+		auto find_max_col_elem = [](std::ranges::forward_range auto&& r, const MatrixLike auto& mtx) {
+			return mtx.get_elem_row_index(max_abs(r));
+		};
+#endif
 		auto diag_range = B.diagonal_range();
 		for (auto&& diag_elem : diag_range) {
 			auto&& submatrix = B.get_submatrix(diag_elem, B[B.rows() - 1][B.cols() - 1]);
@@ -586,8 +593,10 @@ export namespace matrix_helpers {
 			if constexpr (!ComplexLike<value_type>) {
 				if (diag_elem == 0) {
 					sign = -sign;
-					auto idx = frwz(B, diag_elem);
+					// auto idx = frwz(B, diag_elem);
+					auto idx = find_max_col_elem(sub_col, submatrix);// 
 					if (B.get_elem_row_index(diag_elem) == idx) {
+					// if(idx == 0) {
 						throw std::runtime_error(" matrix is singular! ");
 					}
 					auto row_src = submatrix.row(0);
@@ -611,7 +620,7 @@ export namespace matrix_helpers {
 
 			auto normed_subcol = range_norm_by_fst_elem(sub_col);
 			auto&& first_row = submatrix.row(0);
-			size_t i = 0;
+			std::size_t i = 0;
 			for (auto&& m : normed_subcol) {
 				auto&& second_row = submatrix.row(i + 1);
 				auto first_row_x_m = row_elem_mult(first_row, m);
@@ -732,7 +741,7 @@ export namespace matrix_helpers {
 		return minor;
 	}
 
-	auto minor(const MatrixLike auto& A, size_t row, size_t col) {
+	auto minor(const MatrixLike auto& A, std::size_t row, std::size_t col) {
 		return minor(A, row, col, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -1086,7 +1095,7 @@ export namespace matrix_helpers {
 		// --- 4) One-sided Jacobi sweeps ---
 		// We'll perform sweeps over pairs (p,q). Convergence when no rotation larger than threshold.
 		// for (size_type sweep = 0; sweep < max_sweeps; ++sweep) {
-		size_t sweep = 0u;
+		std::size_t sweep = 0u;
 		while(true) {
 			std::cout << "Sweep " << sweep++ << std::endl;
 			bool any_rot = false;
@@ -1614,7 +1623,7 @@ export namespace matrix_helpers {
 		Matrix<value_type, allocator_type> A(n, n, allocator);
 		constexpr auto one = static_cast<value_type>(1);
 		constexpr auto m_one = static_cast<value_type>(-1);
-		for (size_t i = 1; i < n; ++i) {
+		for (std::size_t i = 1; i < n; ++i) {
 			A[i][i-1] = one;
 		}
 
@@ -1767,7 +1776,7 @@ export namespace matrix_helpers {
 #endif
 
 	template<typename value_type>
-	inline auto first_standard_basis_vector(size_t n, const AllocatorLike auto& allocator) {
+	inline auto first_standard_basis_vector(std::size_t n, const AllocatorLike auto& allocator) {
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		constexpr auto one = static_cast<value_type>(1);
 		Matrix<value_type, allocator_type> e1(n, 1, allocator);
@@ -1776,7 +1785,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto basis_vector(size_t n) {
+	inline auto basis_vector(std::size_t n) {
 		return first_standard_basis_vector<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -1825,14 +1834,14 @@ export namespace matrix_helpers {
 		using matrix_type = std::remove_cvref_t<decltype(A)>;
 		using value_type = matrix_type::value_type;
 
-		size_t n = A.cols();
+		std::size_t n = A.cols();
 
 		auto shift = wilkinson_shift_real(A);
 		auto I = identity<value_type>(n);
 		auto Tmat = A - shift * I;
 		auto Q = I;
 		std::vector<std::pair<value_type, value_type>> rots(n - 1);
-		size_t rot_count = 0;
+		std::size_t rot_count = 0;
 
 		auto x = Tmat.get_elem(0, 0);
 		auto y = Tmat.get_elem(1, 0);
@@ -1841,7 +1850,7 @@ export namespace matrix_helpers {
 		auto s = y / denom;
 		rots[rot_count++] = std::make_pair(c, s);
 
-		for (size_t j = 0; j < n; ++j) {
+		for (std::size_t j = 0; j < n; ++j) {
 			auto& t1 = Tmat.get_elem(0, j);
 			auto& t2 = Tmat.get_elem(1, j);
 			auto t1_old = t1;
@@ -1849,7 +1858,7 @@ export namespace matrix_helpers {
 			t2 = -s * t1_old + c * t2;
 		}
 
-		for (size_t i = 0; i < n; ++i) {
+		for (std::size_t i = 0; i < n; ++i) {
 			auto& q1 = Q.get_elem(i, 0);
 			auto& q2 = Q.get_elem(i, 1);
 			auto q1_old = q1;
@@ -1857,7 +1866,7 @@ export namespace matrix_helpers {
 			q2 = -s * q1_old + c * q2;
 		}
 
-		for (size_t k = 1; k < n - 1; ++k) {
+		for (std::size_t k = 1; k < n - 1; ++k) {
 			auto& x = Tmat.get_elem(k, (k - 1));
 			auto& y = Tmat.get_elem((k + 1), (k - 1));
 			auto denom = std::sqrt(x * x + y * y);
@@ -1865,7 +1874,7 @@ export namespace matrix_helpers {
 			auto s = y / denom;
 			rots[rot_count++] = std::make_pair(c, s);
 
-			for (size_t j = k - 1; j < n; ++j) {
+			for (std::size_t j = k - 1; j < n; ++j) {
 				auto& t1 = Tmat.get_elem(k, j);
 				auto& t2 = Tmat.get_elem((k + 1), j);
 				auto t1_old = t1;
@@ -1873,7 +1882,7 @@ export namespace matrix_helpers {
 				t2 = -s * t1_old + c * t2;
 			}
 
-			for (size_t i = 0; i < n; ++i) {
+			for (std::size_t i = 0; i < n; ++i) {
 				auto& q1 = Q.get_elem(i, k);
 				auto& q2 = Q.get_elem(i, (k + 1));
 				auto q1_old = q1;
@@ -1884,10 +1893,10 @@ export namespace matrix_helpers {
 
 		Tmat = A;
 
-		for (size_t k = 0; k < rot_count; ++k) {
+		for (std::size_t k = 0; k < rot_count; ++k) {
 			auto& c = rots[k].first;
 			auto& s = rots[k].second;
-			for (size_t j = 0; j < n; ++j) {
+			for (std::size_t j = 0; j < n; ++j) {
 				auto& t1 = Tmat.get_elem(k, j);
 				auto& t2 = Tmat.get_elem((k + 1), j);
 				auto t1_old = t1;
@@ -1895,7 +1904,7 @@ export namespace matrix_helpers {
 				t2 = -s * t1_old + c * t2;
 			}
 
-			for (size_t i = 0; i < n; ++i) {
+			for (std::size_t i = 0; i < n; ++i) {
 				auto& t1 = Tmat.get_elem(i, k);
 				auto& t2 = Tmat.get_elem(i, (k + 1));
 				auto t1_old = t1;
@@ -1934,7 +1943,7 @@ export namespace matrix_helpers {
 		using value_type = matrix_type::value_type;
 
 		constexpr auto zero = static_cast<value_type>(0);
-		const size_t n = A.rows();
+		const std::size_t n = A.rows();
 		auto I = identity<value_type>(n);
 		Matrix<value_type> R(A - I * shift);
 		auto Q = I;
@@ -1946,7 +1955,7 @@ export namespace matrix_helpers {
 			auto x1 = R.get_elem(1, 0);
 			auto [v0, v1, beta] = householder_vector_francis_qr_2x2(x0, x1);
 			if (std::abs(beta) != value_type(0)) {
-				for (size_t j = 0; j < n; ++j) {
+				for (std::size_t j = 0; j < n; ++j) {
 					auto& R_k_j = R.get_elem(0, j);
 					auto& R_k1_j = R.get_elem((0 + 1), j);
 					if constexpr (ComplexLike<value_type>) {
@@ -1956,20 +1965,20 @@ export namespace matrix_helpers {
 					}
 				}
 
-				for (size_t j = 0; j < n; ++j) {
+				for (std::size_t j = 0; j < n; ++j) {
 					auto& R_k_j = R.get_elem(0, j);
 					auto& R_k1_j = R.get_elem((0 + 1), j);
 					R_k_j -= beta * v0 * u[j];
 					R_k1_j -= beta * v1 * u[j];
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& R_i_k = R.get_elem(i, 0);
 					auto& R_i_k1 = R.get_elem(i, (0 + 1));
 					p[i] = R_i_k * v0 + R_i_k1 * v1;
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& R_i_k = R.get_elem(i, 0);
 					auto& R_i_k1 = R.get_elem(i, (0 + 1));
 					// R_i_k -= beta * p[i] * v0;
@@ -1984,13 +1993,13 @@ export namespace matrix_helpers {
 
 				// --- accumulate Q = Q * H ---
 				// Q * H = Q - beta * (Q * v) * v^T
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& Q_i_k = Q.get_elem(i, 0);
 					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
 					u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& Q_i_k = Q.get_elem(i, 0);
 					auto& Q_i_k1 = Q.get_elem(i, (0 + 1));
 					if constexpr (ComplexLike<value_type>) {
@@ -2004,13 +2013,13 @@ export namespace matrix_helpers {
 			}
 		}
 
-		for (size_t k_ = 1; k_ < n - 1; ++k_) {
+		for (std::size_t k_ = 1; k_ < n - 1; ++k_) {
 			const auto& k = k_;
 			auto x0 = R.get_elem(k, (k - 1));
 			auto x1 = R.get_elem((k + 1), (k - 1));
 			auto [v0, v1, beta] = householder_vector_francis_qr_2x2(x0, x1);
 			if (std::abs(beta) != 0) {
-				for (size_t j = 0; j < n; ++j) {
+				for (std::size_t j = 0; j < n; ++j) {
 					auto& R_k_j = R.get_elem(k, j);
 					auto& R_k1_j = R.get_elem((k + 1), j);
 					if constexpr (ComplexLike<value_type>) {
@@ -2020,20 +2029,20 @@ export namespace matrix_helpers {
 					}
 				}
 
-				for (size_t j = 0; j < n; ++j) {
+				for (std::size_t j = 0; j < n; ++j) {
 					auto& R_k_j = R.get_elem(k, j);
 					auto& R_k1_j = R.get_elem((k + 1), j);
 					R_k_j -= beta * v0 * u[j];
 					R_k1_j -= beta * v1 * u[j];
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& R_i_k = R.get_elem(i, k);
 					auto& R_i_k1 = R.get_elem(i, (k + 1));
 					p[i] = R_i_k * v0 + R_i_k1 * v1;
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& R_i_k = R.get_elem(i, k);
 					auto& R_i_k1 = R.get_elem(i, (k + 1));
 					if constexpr (ComplexLike<value_type>) {
@@ -2047,13 +2056,13 @@ export namespace matrix_helpers {
 
 				// --- accumulate Q = Q * H ---
 				// Q * H = Q - beta * (Q * v) * v^T
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& Q_i_k = Q.get_elem(i, k);
 					auto& Q_i_k1 = Q.get_elem(i, (k + 1));
 					u[i] = Q_i_k * v0 + Q_i_k1 * v1;   // (Q*v)_i
 				}
 
-				for (size_t i = 0; i < n; ++i) {
+				for (std::size_t i = 0; i < n; ++i) {
 					auto& Q_i_k = Q.get_elem(i, k);
 					auto& Q_i_k1 = Q.get_elem(i, (k + 1));
 					if constexpr (ComplexLike<value_type>) {
@@ -2177,7 +2186,7 @@ export namespace matrix_helpers {
 		return false;
 	}
 
-	constexpr size_t find_split_position(const MatrixLike auto& H) {
+	constexpr std::size_t find_split_position(const MatrixLike auto& H) {
 		using matrix = std::remove_cvref_t<decltype(H)>;
 		using value_type = matrix::value_type;
 #if 0
@@ -2242,6 +2251,27 @@ export namespace matrix_helpers {
 	}
 #endif
 
+	constexpr void add_Q(
+		MatrixLike auto& Q_total,
+		const MatrixLike auto& I,
+		MatrixLike auto& H,
+		const MatrixLike auto& mtx,
+		std::size_t top_elem)
+	{
+		using matrix = typename std::remove_cvref_t<decltype(I)>;
+		using value_type = typename matrix::value_type;
+		auto Q_tmp = I;
+		Q_tmp.set_submatrix(Q_tmp[top_elem][top_elem], mtx);
+		Q_total.set_submatrix(Q_total[0][0], Q_total * Q_tmp);
+		if constexpr (ComplexLike<value_type>) {
+			auto Q_tmp_ct = conj_transpose(Q_tmp);
+			H.set_submatrix(H[0][0], Q_tmp_ct * H * Q_tmp);
+		}	else {
+			auto Q_tmp_t = transpose(Q_tmp);
+			H.set_submatrix(H[0][0], Q_tmp_t * H * Q_tmp);
+		}
+	}
+
 	auto schur(const MatrixLike auto& A, const auto& allocator) {
 		using matrix = typename std::remove_cvref_t<decltype(A)>;
 		using value_type = typename matrix::value_type;
@@ -2257,22 +2287,20 @@ export namespace matrix_helpers {
 		if (r == 1) {
 			return std::make_pair(Q_total, H);
 		}
-
-		auto add_Q = [&Q_total, &I, &H](const MatrixLike auto& mtx, size_t top_elem) {
-			using local_value_type = typename std::remove_cvref_t<decltype(mtx)>::value_type;
+#if 0
+		auto add_Q = [&Q_total, &I, &H](const MatrixLike auto& mtx, std::size_t top_elem) {
 			auto Q_tmp = I;
 			Q_tmp.set_submatrix(Q_tmp[top_elem][top_elem], mtx);
 			Q_total.set_submatrix(Q_total[0][0], Q_total * Q_tmp);
-			if constexpr (ComplexLike<local_value_type>) {
-				static_assert(!ComplexLike<local_value_type>, "It can't be here!");
+			if constexpr (ComplexLike<value_type>) {
 				auto Q_tmp_ct = conj_transpose(Q_tmp);
 				H.set_submatrix(H[0][0], Q_tmp_ct * H * Q_tmp);
-			}	else {
-				static_assert(ComplexLike<local_value_type>, "It can't be here!");
-				auto Q_tmp_ct = transpose(Q_tmp);
-				H.set_submatrix(H[0][0], Q_tmp_ct * H * Q_tmp);
+			} else {
+				auto Q_tmp_t = transpose(Q_tmp);
+				H.set_submatrix(H[0][0], Q_tmp_t * H * Q_tmp);
 			}
 		};
+#endif
 
 		if (r == 2) {
 			auto& top = H;
@@ -2284,19 +2312,19 @@ export namespace matrix_helpers {
 				r
 			)) {
 				auto Q = francis_qr_2x2_short(top[0][0], top[0][1], top[1][0], top[1][1]);
-				add_Q(Q, 0);
+				add_Q(Q_total, I, H, Q, 0);
 			}
 			return std::make_pair(Q_total, H);
 		}
 
-		auto disintegration = [&H, &add_Q, &I](MatrixLike auto& mtx) {
+		auto disintegration = [&Q_total, &H, &I](MatrixLike auto& mtx) {
 			const auto r_ = mtx.rows();
 			auto split_pos = find_split_position(mtx);
 			// если mtx.rows() >= 3 у него обязана быть точка разложения
 			while (split_pos == r_) {
 				auto [Q, R] = francis_qr_householder_with_shift(mtx);
 				auto q_diag_place = H.get_elem_row_index(mtx[0][0]);
-				add_Q(Q, q_diag_place);
+				add_Q(Q_total, I, H, Q, q_diag_place);
 				split_pos = find_split_position(mtx);
 			}
 			auto mtx_top = mtx.get_submatrix(mtx[0][0], mtx[split_pos - 1][split_pos - 1]);
@@ -2307,7 +2335,7 @@ export namespace matrix_helpers {
 		if constexpr (!ComplexLike<value_type>) {
 			std::stack<Submatrix<Matrix<value_type>>> stack;
 			stack.push(H.get_submatrix(H[0][0], H[r - 1][r - 1]));
-			size_t ctr = 0;
+			std::size_t ctr = 0;
 			while (!stack.empty()) {
 				auto& top = stack.top();
 				if (top.rows() > 2) {
@@ -2323,11 +2351,25 @@ export namespace matrix_helpers {
 					if constexpr (ComplexLike<value_type>) {
 						auto pos = H.get_elem_row_index(top[0][0]);
 						auto Q = francis_qr_2x2_short(top[0][0], top[0][1], top[1][0], top[1][1]);
-						add_Q(Q, pos);
+						add_Q(Q_total, I, H, Q, pos);
 					}	
 					stack.pop();
 				}
 			}
+#if 0
+			if constexpr (ComplexLike<value_type>) {
+				auto crit = Ahues_Tisseur_criterion(
+					value_type(0), H[0][0], H[0][1],
+					H[1][0], H[1][1],
+					value_type(0),
+					2
+				);
+				if (crit) {
+					auto Q = francis_qr_2x2_short(H[0][0], H[0][1], H[1][0], H[1][1]);
+					add_Q(Q_total, I, H, Q, 0);
+				}
+			}
+#endif
 		} else {
 			auto sub_range = std::ranges::subrange(H.diagonal_rbegin(), H.diagonal_rend() - 1);
 			for (auto& last_diag_elem : sub_range) {
@@ -2342,7 +2384,7 @@ export namespace matrix_helpers {
 					)
 				) {
 					auto&& [Q, R] = francis_qr_householder_with_shift(submatrix);
-					add_Q(Q, 0);
+					add_Q(Q_total, I, H, Q, 0);
 				}
 			}
 		}
@@ -2350,57 +2392,240 @@ export namespace matrix_helpers {
 		return std::make_pair(Q_total, H);
 	}
 
-#if 0
-	// very naive version
-	auto fransic_qr(const MatrixLike auto& A) {
-		using matrix = std::remove_cvref_t<decltype(A)>;
-		using value_type = matrix::value_type;
-		using allocator_type = matrix::allocator_type;
-		auto&& [ T, Q_ ] = hessenberg_form(A);
-		using result_value_type = value_type;
-		using result_allocator_type = rebind_allocator<allocator_type, result_value_type>;
-
-		constexpr auto thr = static_cast<value_type>(3);
-		constexpr auto eps = std::numeric_limits<value_type>::epsilon() * thr;
-		auto converged = [eps](const MatrixLike auto& mtx) {
-
-		};
-
-		auto I = identity<value_type, allocator_type>(A.rows(), allocator_type{});
-		std::cout << "T:" << std::endl;
-		T.print();
-		std::cout << " ----------------------- " << std::endl;
-		for (int i = 0; !converged(T); ++i) {
-			auto mu = wilkinson_shift(A);
-			auto I_mu = I * mu;
-			T = T - I_mu;
-			auto&& [Q, R] = householder_qr_decomposition(T);
-			T = R * Q;
-			T = T + I_mu;
-			std::cout << "T" << i << ":" << std::endl;
-			T.print();
-			std::cout << " ----------------------- " << std::endl;
-		}
-
-		return std::make_pair(std::move(T), std::move(Q_));
-	}
-#endif
-
 	auto schur(const MatrixLike auto& A) {
 		return schur(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
+#if 1
+	constexpr auto lu_i(const MatrixLike auto& A) {
+		using matrix = std::remove_cvref_t<decltype(A)>;
+		using size_type = matrix::size_type;
+		using value_type = matrix::value_type;
 
-#if 0
-	auto schur(const MatrixLike auto& A) {
-		auto [HQ, H] = hessenberg_form(A);
-		auto [Q, T] = schur(H);
-		return std::make_pair(HQ * Q, T);
+		const auto n = A.rows();
+
+		auto U = A;
+		auto L = Matrix<value_type>(n, n);
+		auto P = identity<value_type>(n);
+
+		auto&& Ud = std::ranges::subrange(U.diagonal_begin(), U.diagonal_end());
+		auto&& Ld = std::ranges::subrange(L.diagonal_begin(), L.diagonal_end());
+		auto&& Pd = std::ranges::subrange(P.diagonal_begin(), P.diagonal_end());
+
+		auto v = std::views::zip(Ud, Ld, Pd);
+
+		auto swap_rows = [&U, &L, &P](size_type f, size_type t) {
+			utils::swap_r(U.row(f), U.row(t));
+			utils::swap_r(L.row(f), L.row(t));
+			utils::swap_r(P.row(f), P.row(t));
+		};
+
+		std::ranges::for_each(v, [&U, &L, &P, &swap_rows](auto&& it) {
+			auto&& [U_diag_elem, L_diag_elem, P_diag_elem] = it;
+			auto&& U_submatrix = U.get_submatrix(U_diag_elem, U[U.rows() - 1][U.cols() - 1]);
+			auto&& L_submatrix = L.get_submatrix(L_diag_elem, L[L.rows() - 1][L.cols() - 1]);
+			
+			auto&& U_col_0 = U_submatrix.col(0);
+			auto&& U_row_0 = U_submatrix.row(0);
+			auto U_row_h_idx = U_submatrix.get_elem_row_index(max_abs(U_col_0));
+			auto U_row_h = U_submatrix.row(U_row_h_idx);
+
+			if (U_row_h != U_row_0) {
+				auto from = U.get_elem_row_index(U_row_0[0]);
+				auto to = U.get_elem_row_index(U_row_h[0]);
+				swap_rows(from, to);
+			}
+
+			auto row_elem_mult = [](std::ranges::forward_range auto&& r, auto&& scalar) {
+				using value_type = std::ranges::range_value_t<decltype(r)>;
+				std::vector<value_type> res(r.size());
+				auto&& v = std::views::zip(r, res);
+				std::ranges::for_each(v, [&scalar](auto&& it) {
+					auto&& [src, dst] = it;
+					dst = src * scalar;
+				});
+				return res;
+			};
+
+			auto my_copy = [](
+				std::ranges::input_range auto&& src,
+				std::ranges::input_range auto&& dst
+			) {
+					auto v = std::views::zip(src, dst);
+					for (auto&& it : v) {
+						auto&& [s, d] = it;
+						d = s;
+					}
+			};
+		
+			auto&& normed_subcol = range_norm_by_fst_elem(U_col_0);
+			auto&& L_col_0 = L_submatrix.col(0);
+			*L_col_0.begin() = value_type(1);
+			auto&& L_sub_col_0 = std::ranges::subrange(L_col_0.begin() + 1, L_col_0.end());
+			my_copy(normed_subcol, L_sub_col_0);
+			auto&& first_row = U_row_0;
+			std::size_t i = 0;
+			for (auto&& m : normed_subcol) {
+				auto&& U_second_row = U_submatrix.row(i + 1);
+				auto first_row_x_m = row_elem_mult(first_row, m);
+				auto&& new_second_row = row_substruction(U_second_row, first_row_x_m);
+				my_copy(new_second_row, U_second_row);
+				++i;
+			}
+		});
+		
+		return std::make_tuple(std::move(P), std::move(L), std::move(U));
 	}
+#else
+	constexpr auto lu_i(const MatrixLike auto& A) {
+		using matrix = std::remove_cvref_t<decltype(A)>;
+		using size_type = matrix::size_type;
+		using value_type = matrix::value_type;
+
+		// if (!(A.is_square())) { throw std::runtime_error("LU decomposition is only defined for square matrices"); }
+		const auto n = A.rows();
+
+		auto U = A;
+		auto L = identity<value_type>(n);
+		auto P = identity<value_type>(n);
+
+		auto&& Ud = std::ranges::subrange(U.diagonal_begin(), U.diagonal_end() - 1);
+		auto&& Ld = std::ranges::subrange(L.diagonal_begin(), L.diagonal_end() - 1);
+		auto&& Pd = std::ranges::subrange(P.diagonal_begin(), P.diagonal_end() - 1);
+
+		auto v = std::views::zip(Ud, Ld, Pd);
+
+		auto swap_rows = [&U, &L, P](size_type f, size_type t) {
+			utils::swap_r(U.row(f), U.row(t));
+			utils::swap_r(L.row(f), L.row(t));
+			utils::swap_r(P.row(f), P.row(t));
+		};
+
+		std::ranges::for_each(v, [&U, &L, &P, &swap_rows](auto&& it) {
+			auto&& [U_diag_elem, L_diag_elem, P_diag_elem] = it;
+			auto diag_idx = U.get_elem_row_index(U_diag_elem);
+			auto U_col_D = U.col(diag_idx);
+			auto U_row_D = U.row(diag_idx);
+			auto cutted_U_col_D = std::ranges::subrange(U_col_D.begin() + diag_idx, U_col_D.end());
+			auto biggest_val_elem_row_idx = U.get_elem_row_index(max_abs(cutted_U_col_D));
+			auto biggest_val_elem_row = U.row(biggest_val_elem_idx);
+			if (biggest_val_elem_row != U_row_D) {
+				swap_rows(diag_idx, biggest_val_elem_row_idx);
+			}
+
+
+			auto&& normed_subcol = range_norm_by_fst_elem();
+			auto&& L_col_0 = L.col(0);
+			*L_col_0.begin() = value_type(1);
+			auto&& L_sub_col_0 = std::ranges::subrange(L_col_0.begin() + 1, L_col_0.end());
+			my_copy(normed_subcol, L_sub_col_0);
+			auto&& first_row = U_row_0;
+			std::size_t i = 0;
+			for (auto&& m : normed_subcol) {
+				auto&& U_second_row = U_submatrix.row(i + 1);
+				auto first_row_x_m = row_elem_mult(first_row, m);
+				auto&& new_second_row = row_substruction(U_second_row, first_row_x_m);
+				my_copy(new_second_row, U_second_row);
+				++i;
+			}
+
+		});
+
+		return std::make_tuple(std::move(P), std::move(L), std::move(U));
+	}
+#endif 
+
+	constexpr auto lu_solve(const MatrixLike auto& A, const MatrixLike auto& B) {
+		using matrix = std::remove_cvref_t<decltype(A)>;
+		using size_type = matrix::size_type;
+		using value_type = matrix::value_type;
+#if 0
+		if (A.rows() != A.cols()) {
+			throw std::runtime_error("Matrix must be square for LU solve");
+		}
+
+		if (A.rows() != B.rows()) {
+			throw std::runtime_error("Matrix and right-hand side dimensions don't match");
+		}
 #endif
 
+		// Perform LU decomposition
+		auto [P, L, U] = lu_i(A);
 
-	auto slove_sylvestr_1x1_1x1(
+		const auto n = A.rows();
+		const auto m = B.cols();
+
+		// Apply permutation to B: PB
+		auto PB = P * B;
+
+		// Forward substitution for each column: LY = PB
+		auto Y = Matrix<value_type>(n, m);
+		for (size_type col = 0; col < m; ++col) {
+			auto PBcc = PB.col(col);
+			auto Ycc = Y.col(col);
+			for (size_type i = 0; i < n; ++i) {
+				auto sum = PBcc[i];
+				auto Lri = L.row(i);
+				auto& Lii = Lri[i];
+				auto& Yci = Ycc[i];
+
+				for (size_type j = 0; j < i; ++j) {
+					sum -= Lri[j] * Ycc[j];
+				}
+				Yci = sum / Lii;
+			}
+		}
+
+		// Backward substitution for each column: UX = Y
+		auto X = Matrix<value_type>(n, m);
+		for (size_type col = 0; col < m; ++col) {
+			auto Ycc = Y.col(col);
+			auto Xcc = X.col(col);
+			for (size_type i = n; i-- > 0;) {
+				auto sum = Ycc[i];
+				auto Uri = U.row(i);
+				auto& Uii = Uri[i];
+				for (size_type j = i + 1; j < n; ++j) {
+					sum -= Uri[j] * Xcc[j];
+				}
+				Xcc[i] = sum / Uii;
+			}
+		}
+
+		return X;
+	}
+
+	auto solve_sylvestr_1x1_1x1(
+		const MatrixLike auto& Bii,
+		const MatrixLike auto& Bjj,
+		const MatrixLike auto& R
+	) {
+		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
+		using value_type = matrix_type::value_type;
+		Matrix<value_type> X(1, 1);
+		X[0][0] = R[0][0] / (Bii[0][0] - Bjj[0][0]);
+		return X;
+	}
+
+	auto solve_sylvestr_1x1_2x2(
+		const MatrixLike auto& Bii,
+		const MatrixLike auto& Bjj,
+		const MatrixLike auto& R
+	) {
+		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
+		using value_type = matrix_type::value_type;
+		constexpr auto eps = std::numeric_limits<value_type>::epsilon();
+		auto&& D = Bjj;
+		auto det = (Bii[0][0] - D[0][0]) * (Bii[0][0] - D[1][1]) - (-D[1][0]) * (-D[0][1]);
+		auto x0 = ((Bii[0][0] - D[1][1]) * R[0][0] - (-D[1][0]) * R[0][1]) / det;
+		auto x1 = ((Bii[0][0] - D[0][0]) * R[0][1] - (-D[0][1]) * R[0][0]) / det;
+		Matrix<value_type> X(1, 2);
+		X[0][0] = x0;
+		X[0][1] = x1;
+		return X;
+	}
+
+	auto solve_sylvestr_2x2_2x2(
 		const MatrixLike auto& Bii,
 		const MatrixLike auto& Bjj,
 		const MatrixLike auto& R
@@ -2408,9 +2633,39 @@ export namespace matrix_helpers {
 		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
 		using value_type = matrix_type::value_type;
 
+		auto&& A = Bii;
+		auto&& D = Bjj;
+
+		// Собираем M (4x4) и rhs (4)
+		Matrix<value_type> M(4, 4);
+		Matrix<value_type> rhs(4, 1);
+
+		// Заполнение по строкам в соответствии с порядком [x11, x21, x12, x22]
+		M[0][0] = A[0][0] - D[0][0];	 M[0][1] = A[0][1];           M[0][2] = -D[1][0];					 M[0][3] = 0;
+		M[1][0] = A[1][0];             M[1][1] = A[1][1] - D[0][0]; M[1][2] = 0;								 M[1][3] = -(D[1][0]);
+		M[2][0] = -D[0][1];            M[2][1] = 0;                 M[2][2] = A[0][0] - D[1][1]; M[2][3] = A[0][1];
+		M[3][0] = 0;                   M[3][1] = -D[0][1];          M[3][2] = A[1][0];           M[3][3] = A[1][1] - D[1][1];
+
+		rhs[0][0] = R[0][0];
+		rhs[1][0] = R[1][0];
+		rhs[2][0] = R[0][1];
+		rhs[3][0] = R[1][1];
+
+		// Решаем систему 4x4 (например, методом Гаусса)
+		// ... (реализация solve_4x4)
+		auto solution = lu_solve(M, rhs);
+
+		// Восстанавливаем X
+		Matrix<value_type> X(2, 2);
+		X[0][0] = solution[0][0];
+		X[1][0] = solution[1][0];
+		X[0][1] = solution[2][0];
+		X[1][1] = solution[3][0];
+
+		return X;
 	}
 
-	auto slove_sylvestr_1x1_2x2(
+	auto solve_sylvestr_2x2_1x1(
 		const MatrixLike auto& Bii,
 		const MatrixLike auto& Bjj,
 		const MatrixLike auto& R
@@ -2418,52 +2673,130 @@ export namespace matrix_helpers {
 		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
 		using value_type = matrix_type::value_type;
 
+		Matrix<value_type> M = Bii;
+
+		M[0][0] -= Bjj[0][0];
+		M[1][1] -= Bjj[0][0];
+
+		auto det = M[0][0] * M[1][1] - M[0][1] * M[1][0];
+		auto x0 = (R[0][0] * M[1][1] - M[0][1] * R[1][0]) / det;
+		auto x1 = (M[0][0] * R[1][0] - R[0][0] * M[1][0]) / det;
+
+		Matrix<value_type> X(2, 1);
+		X[0][0] = x0;
+		X[1][0] = x1;
+		return X;
 	}
 
-	auto slove_sylvestr_2x2_2x2(
+	auto solve_sylvestr_(
 		const MatrixLike auto& Bii,
 		const MatrixLike auto& Bjj,
 		const MatrixLike auto& R
 	) {
-		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
-		using value_type = matrix_type::value_type;
-
-	}
-
-	auto slove_sylvestr_2x2_1x1(
-		const MatrixLike auto& Bii,
-		const MatrixLike auto& Bjj,
-		const MatrixLike auto& R
-	) {
-		using matrix_type = std::remove_cvref_t<decltype(Bii)>;
-		using value_type = matrix_type::value_type;
-
-	}
-
-	void slove_sylvestr_(
-		const MatrixLike auto& Bii,
-		const MatrixLike auto& Bjj,
-		const MatrixLike auto& R
-	) {
-		auto b0_rows = Bii.rows();
-		auto b1_rows = Bjj.rows();
-		if (b0_rows == 2) {
-			if (b1_rows == 2) {
-				return slove_sylvestr_2x2_2x2(Bii, Bjj, R);
+		auto Bii_rows = Bii.rows();
+		auto Bjj_cols = Bjj.cols();
+		if (Bii_rows == 2) {
+			if (Bjj_cols == 2) {
+				return solve_sylvestr_2x2_2x2(Bii, Bjj, R);
 			}	else {
-				return slove_sylvestr_2x2_1x1(Bii, Bjj, R);
+				return solve_sylvestr_2x2_1x1(Bii, Bjj, R);
 			}
 		}	else {
-			if (b1_rows == 2) {
-				return slove_sylvestr_1x1_2x2(Bii, Bjj, R);
+			if (Bjj_cols == 2) {
+				return solve_sylvestr_1x1_2x2(Bii, Bjj, R);
 			}	else {
-				return slove_sylvestr_1x1_1x1(Bii, Bjj, R);
+				return solve_sylvestr_1x1_1x1(Bii, Bjj, R);
 			}
 		}
 	}
 
-	auto compute_R() {
-	
+	auto to_blocks_(const MatrixLike auto& T) {
+		using matrix_type = std::remove_cvref_t<decltype(T)>;
+		using value_type = matrix_type::value_type;
+
+		assert(T.rows() == T.cols());
+		const auto n = T.rows();
+		decltype(T.rows()) x = 0;
+
+		std::deque<const_Submatrix<const Matrix<value_type>>> Bii_blocks;
+		auto crit = Ahues_Tisseur_criterion(
+			T[n - 2][n - 3], T[n - 2][n - 2], T[n - 2][n - 1],
+			T[n - 1][n - 2], T[n - 1][n - 1],
+			value_type(0),
+			T.rows()
+		);
+#if 0
+		std::cout << T[n - 2][n - 3] << "\t" << T[n - 2][n - 2] << "\t" << T[n - 2][n - 1] << std::endl;
+		std::cout << "\t\t"									 << T[n - 1][n - 2]	<< "\t" << T[n - 1][n - 1] << std::endl;
+		std::cout << crit << "\t\t\t\t"																  << value_type(0)	 << std::endl;
+		std::cout << std::endl;
+#endif
+		if (crit) {
+			Bii_blocks.push_front(T.get_submatrix(T[n - 1][n - 1], T[n - 1][n - 1]));
+			x += 1;
+		}	else {
+			Bii_blocks.push_front(T.get_submatrix(T[n - 2][n - 2], T[n - 1][n - 1]));
+			x += 2;
+		}
+
+		for (auto k = n - 1 - x; k > 1;) {
+			crit = Ahues_Tisseur_criterion(
+				T[k - 1][k - 2], T[k - 1][k - 1], T[k - 1][k],
+				T[k][k - 1], T[k][k],
+				T[k + 1][k],
+				k
+			);
+#if 0
+			std::cout << T[k - 1][k - 2] << "\t" << T[k - 1][k - 1] << "\t" << T[k - 1][k] << std::endl;
+			std::cout << "\t\t"									 << T[k][k - 1]			<< "\t" << T[k][k]		 << std::endl;
+			std::cout << crit << "\t\t\t\t"																  << T[k + 1][k] << std::endl;
+			std::cout << std::endl;
+#endif
+			if (crit) {
+				Bii_blocks.push_front(T.get_submatrix(T[k][k], T[k][k])); // 1x1
+				k -= 1;
+			}	else {
+				Bii_blocks.push_front(T.get_submatrix(T[k - 1][k - 1], T[k][k])); // 2x2
+				k -= 2;
+			}
+		}
+
+		crit = Ahues_Tisseur_criterion(
+			value_type(0), T[0][0], T[0][1],
+			T[1][0], T[1][1],
+			T[2][1],
+			2
+		);
+#if 0
+		std::cout << value_type(0) << "\t" << T[0][0] << "\t" << T[0][1] << std::endl;
+		std::cout << "\t\t"								 << T[1][0]	<< "\t" << T[1][1] << std::endl;
+		std::cout << crit << "\t\t\t\t"												<< T[2][1] << std::endl;
+#endif
+		if (crit) {
+			Bii_blocks.push_front(T.get_submatrix(T[1][1], T[1][1]));
+			Bii_blocks.push_front(T.get_submatrix(T[0][0], T[0][0]));
+		}	else {
+			Bii_blocks.push_front(T.get_submatrix(T[0][0], T[1][1]));
+		}
+
+		return Bii_blocks;
+	}
+	auto to_blocks_complex(const MatrixLike auto& A) {
+		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
+		std::deque<const_Submatrix<const Matrix<value_type>>> Bii_blocks;
+		std::ranges::for_each(A.diagonal_range(), [&Bii_blocks, &A](auto&& it) {
+			Bii_blocks.emplace_back(A.get_submatrix(it, it));
+		});
+		return Bii_blocks;
+	}
+
+	auto to_blocks(const MatrixLike auto& A) {
+		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
+		if constexpr (ComplexLike<value_type>) {
+			return to_blocks_complex(A);
+		}	else {
+			return to_blocks_(A);
+		}
 	}
 
 	auto parlett(const MatrixLike auto& T, auto&& f) {
@@ -2472,31 +2805,14 @@ export namespace matrix_helpers {
 
 		const auto n = T.rows();
 		Matrix<value_type> F(n, n);
-#if 1
-		std::deque<const_Submatrix<const Matrix<value_type>>> deque;
-		auto top = T.get_submatrix(T[0][0], T[n - 1][n - 1]);
-		while (top.rows() > 2) {
-			auto r = top.rows();
-			size_t split_pos = find_split_position(top);
-			auto mtx_top = top.get_submatrix(top[0][0], top[split_pos - 1][split_pos - 1]);
-			auto mtx_bottom = top.get_submatrix(top[split_pos][split_pos], top[r - 1][r - 1]);
-			top = mtx_top;
-			deque.push_front(mtx_bottom);
-		}
-		auto crit = Ahues_Tisseur_criterion(
-			value_type(0), top[0][0], top[0][1],
-										 top[1][0], top[1][1],
-																T[2][1],
-			2
-		);
-		if (crit) {
-			deque.push_front(top.get_submatrix(top[1][1], top[1][1]));
-			deque.push_front(top.get_submatrix(top[0][0], top[0][0]));
-		}	else {
-			deque.push_front(top);
-		}
+		// matrix_type F(n, n);
 
+		// Находим на диагонали матрицы блоки 1х1 и 2х2
+		auto Bii_blocks = to_blocks(T);
+
+#if 1
 		auto mod_2x2_ = [&f, I = identity<std::complex<value_type_t<value_type>>>(2)](const MatrixLike auto& mtx) {
+			constexpr auto eps = std::numeric_limits<value_type_t<value_type>>::epsilon();
 			auto [l1, l2] = self_values_2x2(mtx[0][0], mtx[0][1], mtx[1][0], mtx[1][1]);
 			auto fl1 = std::invoke(f, l1);
 			auto fl2 = std::invoke(f, l2);
@@ -2506,6 +2822,10 @@ export namespace matrix_helpers {
 			auto trd = fst / snd;
 			auto result = (trd) * (mtx - I * l2) + (I * fl2);
 			Matrix<value_type_t<value_type>> block(2, 2);
+			assert(std::abs(result[0][0].imag()) < eps);
+			assert(std::abs(result[0][1].imag()) < eps);
+			assert(std::abs(result[1][0].imag()) < eps);
+			assert(std::abs(result[1][1].imag()) < eps);
 			block[0][0] = std::real(result[0][0]);
 			block[0][1] = std::real(result[0][1]);
 			block[1][0] = std::real(result[1][0]);
@@ -2513,77 +2833,203 @@ export namespace matrix_helpers {
 			return block;
 		};
 
-		std::deque<Matrix<value_type>> f_block;
-		for(auto&& block : deque) {
+		std::deque<Submatrix<Matrix<value_type>>> Fii_blocks;
+		// считаем функцию от этих блоков 
+		for (auto&& block : Bii_blocks) {
 			if (block.rows() > 1) {
-				f_block.push_back(mod_2x2_(block));
+				auto res = mod_2x2_(block);
+				auto [r, c] = T.get_elem_indices(block[0][0]);
+				F.set_submatrix(F[r][c], res);
+				Fii_blocks.push_back(F.get_submatrix(F[r][c], F[r + 1][c + 1]));
 			}	else {
-				auto pos = T.get_elem_row_index(top[0][0]);
-				Matrix<value_type> tmp(1, 1);
-				tmp[0][0] = std::invoke(f, T[pos][pos]);
-				f_block.push_back(std::move(tmp));
-			}
-		}
-
-		std::ranges::subrange x(deque.begin(), deque.end() - 1);
-		std::ranges::subrange z(f_block.begin(), f_block.end() - 1);
-		std::ranges::subrange y(deque.begin() + 1, deque.end());
-		std::ranges::subrange w(f_block.begin() + 1, f_block.end());
-
-		auto v = std::views::zip(x, z, y, w);
-		size_t counter = 0;
-		std::ranges::for_each(v, [&counter](auto&& it) {
-			auto [x, y, z, w] = it;
-			std::cout << "-------------------------------------------------" << std::endl;
-			std::cout << "B[" << counter << "][" << counter << "]" << std::endl;
-			x.print();
-			std::cout << "F[" << counter << "][" << counter << "]" << std::endl;
-			y.print();
-			std::cout << "B[" << counter + 1 << "][" << counter + 1 << "]" << std::endl;
-			z.print();
-			std::cout << "F[" << counter + 1 << "][" << counter + 1 << "]" << std::endl;
-			w.print();
-			++counter;
-		});
-		std::cout << "-------------------------------------------------" << std::endl;
-
-
-#else
-		auto v = std::views::zip(T.diagonal_range(), F.diagonal_range());
-		std::ranges::for_each(v, [&f](auto&& it) {
-			auto& [te, fe] = it;
-			fe = std::invoke(f, te);
-		});
-#endif
-
-#if 0
-		for (size_t d = 1; d < n; ++d) {
-			for (size_t i = 0; i < n - d; ++i) {
-				size_t j = i + d;
-
-				auto Tri = T.row(i);
-				auto Fri = F.row(i);
-				auto& Trici = Tri[i];
-				auto& Frici = Fri[i];
-
-				auto Frj = F.row(j);
-				auto Trj = T.row(j);
-				auto& Trjcj = Trj[j];
-				auto& Frjcj = Frj[j];
-				auto& Fricj = Fri[j];
-				auto& Tricj = Tri[j];
-
-				auto Fcj = F.col(j);
-				auto Tcj = T.col(j);
-
-				value_type s = 0;
-				for (size_t k = i + 1; k < j; ++k) {
-					s += Tri[k] * Fcj[k] - Fri[k] * Tcj[k];
-				}
-				Fricj = (Tricj * (Frici - Frjcj) + s) / (Trici - Trjcj);
+				auto [r, c] = T.get_elem_indices(block[0][0]);
+				F[r][c] = std::invoke(f, T[r][c]);
+				Fii_blocks.push_back(F.get_submatrix(F[r][c], F[r][c]));
 			}
 		}
 #endif
+
+#if 1
+		// делим всю наддиагональ матрицы на блоки
+		auto x = [](auto&& B_blocks, auto&& main_mtx) {
+			auto&& T = main_mtx;
+			auto&& v = B_blocks | std::views::pairwise;
+			std::vector<decltype(T.get_submatrix(T[0][0], T[0][0]))> res;
+			for (auto&& it : v) {
+				auto [Bii, Bjj] = it;
+				auto [Bii0r, Bii0c] = T.get_elem_indices(Bii[0][0]);
+				auto [Biilr, Biilc] = T.get_elem_indices(Bii[Bii.rows() - 1][Bii.cols() - 1]);
+				auto Bijfr = Bii0r;
+				auto Bijfc = Bii0c + Bii.cols();
+				auto Bijlr = Biilr;
+				auto Bijlc = Biilc + Bjj.cols();
+				res.push_back(T.get_submatrix(T[Bijfr][Bijfc], T[Bijlr][Bijlc]));	
+			}
+			return res;
+		};
+
+		Matrix<const_Submatrix<const Matrix<value_type>>> B_blocks(Bii_blocks.size(), Bii_blocks.size());
+		{
+			auto v = std::views::zip(B_blocks.diagonal_range(), Bii_blocks);
+			std::ranges::for_each(v, [](auto&& it) {
+				auto& [B, Bii] = it;
+				B = std::move(Bii);
+			});
+		}
+
+		Matrix<Submatrix<Matrix<value_type>>> F_blocks(Fii_blocks.size(), Fii_blocks.size());
+		{
+			auto v = std::views::zip(F_blocks.diagonal_range(), Fii_blocks);
+			std::ranges::for_each(v, [](auto&& it) {
+				auto& [F, Fii] = it;
+				F = std::move(Fii);
+			});
+		}
+		 
+		{
+			auto v = std::views::iota(unsigned(0), B_blocks.rows());
+			auto v_pair = v | std::views::pairwise;
+			auto&& xB = [&T, &x](auto&& blocks) { return x(blocks, T); };
+			std::ranges::for_each(v_pair, [&B_blocks, &xB](auto&& val) {
+				auto&& [it, next] = val;
+				auto&& r = B_blocks.subdiagonal_range(it);
+				auto v_next = xB(r);
+				auto zv = std::views::zip(v_next, B_blocks.subdiagonal_range(next));
+				std::ranges::for_each(zv, [](auto&& it) {
+					auto&& [old_, new_] = it;
+					new_ = std::move(old_);
+				});
+			});
+		}
+
+		{
+			auto v = std::views::iota(unsigned(0), F_blocks.rows());
+			auto v_pair = v | std::views::pairwise;
+			auto&& xF = [&F, &x](auto&& blocks) { return x(blocks, F); };
+			std::ranges::for_each(v_pair, [&F_blocks, &xF](auto&& val) {
+				auto&& [it, next] = val;
+				auto&& r = F_blocks.subdiagonal_range(it);
+				auto v_next = xF(r);
+				auto zv = std::views::zip(v_next, F_blocks.subdiagonal_range(next));
+				std::ranges::for_each(zv, [](auto&& it) {
+					auto&& [old_, new_] = it;
+					new_ = std::move(old_);
+				});
+			});
+		}
+#endif
+		
+#if 1
+
+		auto set_Fij = [](auto&& Fij, auto&& Bii, auto&& Bjj, auto&& Rij) {
+			auto res = solve_sylvestr_(Bii, Bjj, Rij);
+			assert((Fij.rows() == res.rows()) && (Fij.cols() == res.cols()));
+			Fij.set_submatrix(Fij[0][0], res);
+		};
+		// считаем Fij для наддиагонали
+		auto calc_Fij = [&B_blocks, &F_blocks, &set_Fij]() {
+			auto Fij = F_blocks.subdiagonal_range(1);
+			auto FiiFjj = F_blocks.diagonal_range() | std::views::pairwise;
+			auto Bij = B_blocks.subdiagonal_range(1);
+			auto BiiBjj = B_blocks.diagonal_range() | std::views::pairwise;
+
+			auto v = std::views::zip(Fij, FiiFjj, Bij, BiiBjj);
+			std::ranges::for_each(v, [&set_Fij](auto&& it) {
+				auto&& [Fij, FiiFjj, Bij, BiiBjj] = it;
+				auto&& [Fii, Fjj] = FiiFjj;
+				auto&& [Bii, Bjj] = BiiBjj;
+				auto R = ((Fii* Bij) - (Bij * Fjj));
+				set_Fij(Fij, Bii, Bjj, R);
+			});
+
+		};
+		calc_Fij();
+#endif
+
+#if 1
+		// считаем R и F для ещё одного слоя наддиагональных блоков матрицы
+		auto calc_half = [&F_blocks, &B_blocks, &set_Fij]() {
+			auto Bb_r = B_blocks.diagonal_range();
+			auto Bii = std::ranges::subrange(Bb_r.begin(), Bb_r.end() - 2);
+			auto Bjj = std::ranges::subrange(Bb_r.begin() + 2, Bb_r.end());
+			auto BiiBjj = std::views::zip(Bii, Bjj);
+
+			auto Fb_r = F_blocks.diagonal_range();
+			auto Fii = std::ranges::subrange(Fb_r.begin(), Fb_r.end() - 2);
+			auto Fjj = std::ranges::subrange(Fb_r.begin() + 2, Fb_r.end());
+			auto FiiFjj = std::views::zip(Fii, Fjj);
+
+			auto Fb_d1_r = F_blocks.subdiagonal_range(1);
+			auto FinFnj = Fb_d1_r | std::views::pairwise;
+
+			auto Bb_d1_r = B_blocks.subdiagonal_range(1);
+			auto BinBnj = Bb_d1_r | std::views::pairwise;
+
+			auto Bij = B_blocks.subdiagonal_range(2);
+			auto Fij = F_blocks.subdiagonal_range(2);
+
+			auto v = std::views::zip(BiiBjj, FiiFjj, FinFnj, BinBnj, Bij, Fij);
+
+			std::ranges::for_each(v, [&set_Fij](auto&& it) {
+				auto&& [BiiBjj, FiiFjj, FinFnj, BinBnj, Bij, Fij] = it;
+				auto&& [Bii, Bjj] = BiiBjj;
+				auto&& [Fii, Fjj] = FiiFjj;
+				auto&& [Fin, Fnj] = FinFnj;
+				auto&& [Bin, Bnj] = BinBnj;
+				auto Rij = ((Fii * Bij - Bij * Fjj) + (Fin * Bnj - Bin * Fnj));
+				set_Fij(Fij, Bii, Bjj, Rij);
+			});
+		};
+		calc_half();
+#endif
+
+		auto calc_last = [&set_Fij](auto&& Brow, auto&& Bcol, auto&& Frow, auto&& Fcol) {
+			auto&& Fii = *Frow.begin();
+			auto&& Fjj = *(Fcol.end() - 1);
+			auto&& Bii = *Brow.begin();
+			auto&& Bjj = *(Bcol.end() - 1);
+			auto&& Fij = *(Frow.end() - 1); // *(Fcol.begin())
+			auto&& Bij = *(Brow.end() - 1); // *(Bcol.begin())
+			auto Birow = std::ranges::subrange(Brow.begin() + 1, Brow.end() - 1);
+			auto Firow = std::ranges::subrange(Frow.begin() + 1, Frow.end() - 1);
+			auto Bicol = std::ranges::subrange(Bcol.begin() + 1, Bcol.end() - 1);
+			auto Ficol = std::ranges::subrange(Fcol.begin() + 1, Fcol.end() - 1);
+			auto blocks = std::views::zip(Firow, Bicol, Birow, Ficol);
+			auto calc_right_part = [](auto&& Fik, auto&& Bkj, auto&& Bik, auto&& Fkj) {
+				return Fik * Bkj - Bik * Fkj;
+			};
+			auto left_part = Fii * Bij - Bij * Fjj;
+			auto right_part = Matrix<value_type>(left_part.rows(), left_part.cols());
+			std::ranges::for_each(blocks, [&calc_right_part, &right_part](auto&& block) {
+				auto&& [Fik, Bkj, Bik, Fkj] = block;
+				right_part = right_part + calc_right_part(Fik, Bkj, Bik, Fkj);
+			});
+			set_Fij(Fij, Bii, Bjj, (left_part + right_part));
+		};
+
+		auto x2 = [&B_blocks, &F_blocks, &calc_last](
+			auto&& B_diag_fst_elem,
+			auto&& B_diag_lst_elem,
+			auto&& F_diag_fst_elem,
+			auto&& F_diag_lst_elem
+		) {
+			auto Bsub = B_blocks.get_submatrix(B_diag_fst_elem, B_diag_lst_elem);
+			auto Fsub = F_blocks.get_submatrix(F_diag_fst_elem, F_diag_lst_elem);
+			calc_last(Bsub.row(0), Bsub.col(Bsub.cols() - 1), Fsub.row(0), Fsub.col(Fsub.cols() - 1));
+		};
+
+		for (int offset = 3; offset < B_blocks.rows(); ++offset) {
+			auto B_diag_fst_range = std::ranges::subrange(B_blocks.diagonal_begin(), B_blocks.diagonal_end() - offset);
+			auto B_diag_lst_range = std::ranges::subrange(B_blocks.diagonal_begin() + offset, B_blocks.diagonal_end());
+			auto F_diag_fst_range = std::ranges::subrange(F_blocks.diagonal_begin(), F_blocks.diagonal_end() - offset);
+			auto F_diag_lst_range = std::ranges::subrange(F_blocks.diagonal_begin() + offset, F_blocks.diagonal_end());
+			auto diag = std::views::zip(B_diag_fst_range, B_diag_lst_range, F_diag_fst_range, F_diag_lst_range);
+
+			std::ranges::for_each(diag, [&x2](auto&& it) {
+				auto&& [B_diag_fst_elem, B_diag_lst_elem, F_diag_fst_elem, F_diag_lst_elem] = it;
+				x2(B_diag_fst_elem, B_diag_lst_elem, F_diag_fst_elem, F_diag_lst_elem);
+			});
+		}
 
 		return F;
 	}
@@ -2695,120 +3141,6 @@ export namespace matrix_helpers {
 	}
 
 #if 0
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto lu_i(const Matrix<T>& A, Matrix<T>& L, Matrix<T>& U, Matrix<T>& P) { // -> std::tuple<Matrix<T, Alloc>, Matrix<T, Alloc>, Matrix<T, Alloc>> {
-		using matrix = std::remove_cvref_t<decltype(A)>;
-		using size_type = matrix::size_type;
-		using value_type = matrix::value_type;
-
-		if (!(A.is_square())) { throw std::runtime_error("LU decomposition is only defined for square matrices"); }
-		const auto n = A.rows();
-
-		L = identity<T, Alloc>(n);
-		U = A;
-		P = identity<T, Alloc>(n);
-
-		auto swap_rows = [&L, &U, &P](size_type current_row, size_type max_value_row) {
-			utils::swap_r(U.row(current_row), U.row(max_value_row));
-			utils::swap_r(P.row(current_row), P.row(max_value_row));
-			utils::swap_r(L.row(current_row), L.row(max_value_row));
-		};
-
-		auto process = [&U, &L, n](size_type k) {
-			auto Uck = U.col(k);
-			auto Urk = U.row(k);
-			auto Lck = L.col(k);
-			auto& Ukk = Urk[k];
-			// auto& Ukk = Uck[k];
-			for (size_type i = k + 1; i < n; ++i) {
-				Lck[i] = Uck[i] / Ukk;
-				auto Uri = U.row(i);
-				auto& Lik = Lck[i];
-				for (size_type j = k; j < n; ++j) {
-					Uri[j] -= Lik * Urk[j];
-				}
-			}
-		};
-
-		std::ranges::for_each(U.col_range(), [&U, &swap_rows, &process](auto&& it) {
-			auto [r, c] = U.get_indices(it[0]);
-			auto mv_row = U.get_elem_row_index(max_abs(it));
-			if (mv_row != c) { swap_rows(c, mv_row); }
-			process(c);
-		});
-
-		// return std::make_tuple(P, L, U);
-	}
-
-	template <typename T, typename Alloc = std::allocator<T>>
-	constexpr auto lu(const Matrix<T>&A) {
-		using X = Matrix<T, Alloc>;
-		auto t = std::tuple<X, X, X>();
-		auto& [L, U, P] = t;
-		lu_i<T, Alloc>(A, L, U, P);
-		return t;
-	}
-
-	template<typename T, typename Alloc = std::allocator<T>>
-	constexpr auto lu_solve(const Matrix<T>& A, const Matrix<T>& B) -> Matrix<T, Alloc> {
-		using matrix = std::remove_cvref_t<decltype(A)>;
-		using size_type = matrix::size_type;
-		using value_type = matrix::value_type;
-
-		if (A.rows() != A.cols()) {
-			throw std::runtime_error("Matrix must be square for LU solve");
-		}
-
-		if (A.rows() != B.rows()) {
-			throw std::runtime_error("Matrix and right-hand side dimensions don't match");
-		}
-
-		// Perform LU decomposition
-		auto [P, L, U] = lu<T, Alloc>(A);
-
-		const auto n = A.rows();
-		const auto m = B.cols();
-
-		// Apply permutation to B: PB
-		auto PB = P * B;
-
-		// Forward substitution for each column: LY = PB
-		auto Y = Matrix<T, Alloc>(n, m);
-		for (size_type col = 0; col < m; ++col) {
-			auto PBcc = P.col(col);
-			auto Ycc = Y.col(col);
-			for (size_type i = 0; i < n; ++i) {
-				auto sum = PBcc[i];
-				auto Lri = L.row(i);
-				auto& Lii = Lri[i];
-				auto& Yci = Ycc[i];
-
-				for (size_type j = 0; j < i; ++j) {
-					sum -= Lri[j] * Ycc[j];
-				}
-				Yci = sum / Lii;
-			}
-		}
-
-		// Backward substitution for each column: UX = Y
-		auto X = Matrix<T, Alloc>(n, m);
-		for (size_type col = 0; col < m; ++col) {
-			auto Ycc = Y.col(col);
-			auto Xcc = X.col(col);
-			for (size_type i = n; i-- > 0;) {
-				auto sum = Ycc[i];
-				auto Uri = U.row(i);
-				auto& Uii = Uri[i];
-				for (size_type j = i + 1; j < n; ++j) {
-					sum -= Uri[j] * Xcc[j];
-				}
-				Xcc[i] = sum / Uii;
-			}
-		}
-
-		return X;
-	}
-
 	template<std::floating_point U, typename Alloc = std::allocator<U>>
 	inline auto sqrtm_Denman_Beavers(const Matrix<U>& A) -> Matrix<U, Alloc> {
 		using matrix = std::remove_cvref_t<decltype(A)>;

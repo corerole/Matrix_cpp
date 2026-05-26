@@ -13,7 +13,8 @@ void test_ctors() {
 	Matrix<float> a2(a1); // copy
 	Matrix<float> a4 = a1; // ass copy
 	Matrix<float> a3(std::move(a1)); // move
-	Matrix<float> a5 = std::move(a2); // ass move
+	Matrix<float> a5(3, 4);
+	a5 = std::move(a2); // ass move
 	auto x = a1.begin();
 }
 
@@ -43,19 +44,26 @@ void operator_test(const MatrixLike auto& mtx) {
 int main() {
 	
 		using value_type = float;
-		constexpr size_t cols = 6, rows = 6;
+		constexpr size_t cols = 12, rows = 12;
 		constexpr size_t SZ = cols * rows * sizeof(value_type) + alignof(value_type);
 		std::array<std::byte, SZ> buf;
 
 		std::pmr::monotonic_buffer_resource mbr(buf.data(), buf.size(), std::pmr::null_memory_resource());
 		Matrix<value_type> A(cols, rows, &mbr);
 
-		A[0][0] = 2.0f;		A[0][1] = -0.5f;	A[0][2] = 1.0f; A[0][3] = 0.0f;		A[0][4] = 0.5f;		A[0][5] = -2.0f;
-		A[1][0] = -1.0f;	A[1][1] = -1.0f;	A[1][2] = 0.0f; A[1][3] = 2.0f;		A[1][4] = 2.0f;		A[1][5] = -0.5f;
-		A[2][0] = 1.0f;		A[2][1] = 1.0f;		A[2][2] = 2.0f; A[2][3] = -1.0f;	A[2][4] = -1.0f;	A[2][5] = 1.0f;
-		A[3][0] = -2.0f;	A[3][1] = 0.0f;		A[3][2] = 1.0f; A[3][3] = -1.0f;	A[3][4] = -2.0f;	A[3][5] = 2.0f;
-		A[4][0] = 0.5f;		A[4][1] = -1.0f;	A[4][2] = 0.0f; A[4][3] = 2.0f;		A[4][4] = -0.5f;	A[4][5] = -1.0f;
-		A[5][0] = -0.5f;	A[5][1] = 1.0f;		A[5][2] = 2.0f; A[5][3] = -1.0f;	A[5][4] = 1.0f;		A[5][5] = 0.5f;
+		A[0][0] = 2.0f;		A[0][1] = -0.5f;	A[0][2] = 1.0f;	 A[0][3] = 0.0f;		A[0][4] = 0.5f;		A[0][5] = -2.0f;	A[0][6] = -2.0f;	A[0][7] = -0.5f;	A[0][8] = 1.0f;	 A[0][9] = 0.5f;		A[0][10] = 2.5f;		A[0][11] = 2.0f;
+		A[1][0] = -1.0f;	A[1][1] = -1.0f;	A[1][2] = 0.0f;	 A[1][3] = 2.0f;		A[1][4] = 2.0f;		A[1][5] = -0.5f;	A[1][6] = 1.0f;		A[1][7] = -1.5f;	A[1][8] = 2.0f;	 A[1][9] = 1.0f;		A[1][10] = -1.5f;		A[1][11] = -2.0f;
+		A[2][0] = 1.0f;		A[2][1] = 1.0f;		A[2][2] = 2.0f;	 A[2][3] = -1.0f;		A[2][4] = -1.0f;	A[2][5] = 1.0f;		A[2][6] = 2.0f;		A[2][7] = 2.0f;		A[2][8] = 0.5f;	 A[2][9] = -0.5f;		A[2][10] = 0.0f;		A[2][11] = 2.0f;
+		A[3][0] = -2.0f;	A[3][1] = 0.0f;		A[3][2] = 1.0f;	 A[3][3] = -1.0f;		A[3][4] = -2.0f;	A[3][5] = 2.0f;		A[3][6] = -0.5f;	A[3][7] = 1.0f;		A[3][8] = -2.0f; A[3][9] = 2.0f;		A[3][10] = 0.5f;		A[3][11] = -2.0f;
+		A[4][0] = 0.5f;		A[4][1] = -1.0f;	A[4][2] = 0.0f;	 A[4][3] = 2.0f;		A[4][4] = -0.5f;	A[4][5] = -1.0f;	A[4][6] = 2.0f;		A[4][7] = -2.0f;	A[4][8] = -1.0f; A[4][9] = 1.5f;		A[4][10] = -0.5f;		A[4][11] = 2.0f;
+		A[5][0] = -0.5f;	A[5][1] = 1.0f;		A[5][2] = 2.0f;	 A[5][3] = -1.0f;		A[5][4] = 1.0f;		A[5][5] = 0.5f;		A[5][6] = 1.0f;		A[5][7] = -0.5f;	A[5][8] = 2.0f;	 A[5][9] = 0.5f;		A[5][10] = 2.0f;		A[5][11] = -2.0f;
+		A[6][0] = 2.0f;		A[6][1] = -0.5f;	A[6][2] = 1.0f;	 A[6][3] = 0.0f;		A[6][4] = 0.5f;		A[6][5] = -2.0f;	A[6][6] = -1.0f;	A[6][7] = 1.0f;		A[6][8] = 0.5f;	 A[6][9] = 0.5f;		A[6][10] = -1.0f;		A[6][11] = 2.0f;
+		A[7][0] = -1.0f;	A[7][1] = -1.0f;	A[7][2] = 0.0f;	 A[7][3] = 2.0f;		A[7][4] = 2.0f;		A[7][5] = -0.5f;	A[7][6] = 0.5f;		A[7][7] = 2.0f;		A[7][8] = -0.5f; A[7][9] = 2.0f;		A[7][10] = 2.0f;		A[7][11] = -2.0f;
+		A[8][0] = 1.0f;		A[8][1] = 1.0f;		A[8][2] = 2.0f;	 A[8][3] = -1.0f;		A[8][4] = -1.0f;	A[8][5] = 1.0f;		A[8][6] = 0.0f;		A[8][7] = 0.5f;		A[8][8] = 1.0f;	 A[8][9] = 2.0f;		A[8][10] = 0.5f;		A[8][11] = 2.0f;
+		A[9][0] = -2.0f;	A[9][1] = 0.0f;		A[9][2] = 1.0f;	 A[9][3] = -1.0f;		A[9][4] = -2.0f;	A[9][5] = 2.0f;		A[9][6] = 2.0f;		A[9][7] = 0.5f;		A[9][8] = 2.0f;	 A[9][9] = -2.0f;		A[9][10] = -0.5f;		A[9][11] = 2.0f;
+		A[10][0] = 0.5f;	A[10][1] = -1.0f;	A[10][2] = 0.0f; A[10][3] = 2.0f;		A[10][4] = -0.5f;	A[10][5] = -1.0f;	A[10][6] = 1.0f;	A[10][7] = 2.0f;	A[10][8] = 2.0f; A[10][9] = 1.0f;		A[10][10] = 0.5f;		A[10][11] = -2.0f;
+		A[11][0] = -0.5f;	A[11][1] = 1.0f;	A[11][2] = 2.0f; A[11][3] = -1.0f;	A[11][4] = 1.0f;	A[11][5] = 0.5f;	A[11][6] = -1.0f;	A[11][7] = 1.0f;	A[11][8] = 1.0f; A[11][9] = -1.0f;	A[11][10] = 1.0f;		A[11][11] = 2.0f;
+
 
 		A.print();
 #if 0
@@ -260,7 +268,7 @@ int main() {
 			res.print();
 			std::cout << "----------------------" << std::endl;
 		}
-
+#if 0
 		{
 			std::cout << "MTX row_x_mtx: " << std::endl;
 			std::array<int, 6> row = { 1, 2, 3, 4, 5, 6 };
@@ -271,6 +279,7 @@ int main() {
 			std::cout << std::endl;
 			std::cout << "----------------------" << std::endl;
 		}
+#endif
 
 		{
 			std::cout << "MTX mtx_x_col: " << std::endl;
@@ -378,20 +387,21 @@ int main() {
 			std::cout << "One elem mtx.size() : " << sub.size() << std::endl;
 		}
 
-#if 0
+#if 1
 		{
 			std::cout << "----------------------" << std::endl;
 			std::cout << "A: " << std::endl;
 			auto complex_mtx = utils::to_complex(A);
-			complex_mtx.print();
-			auto [Q, H] = matrix_helpers::hessenberg_form(complex_mtx);
+			// complex_mtx.print();
+			A.print();
+			auto [Q, H] = matrix_helpers::hessenberg_form(A);
 			auto [U, T] = matrix_helpers::schur(H);
 			auto UQ = Q * U;
 			std::cout << "Q :" << std::endl;
 			UQ.print();
 			std::cout << " T : " << std::endl;
 			T.print();
-			auto UQ_tc = matrix_helpers::conj_transpose(UQ);
+			auto UQ_tc = matrix_helpers::transpose(UQ);
 			auto res = UQ * T * UQ_tc;
 			std::cout << "Q * T * conj_transpose(Q) :" << std::endl;
 			res.print();
@@ -439,10 +449,89 @@ int main() {
 		}
 #endif
 
+
+#if 1
+		{
+			std::cout << "LU-test: " << std::endl;
+			auto [P, L, U] = matrix_helpers::lu_i(A);
+			// auto x = P.get_allocator();
+			// auto y = L.get_allocator();
+			// auto z = U.get_allocator();
+			// std::cout << x.resource() << " | " << y.resource() << " | " << z.resource() << std::endl;
+			std::cout << "L: " << std::endl;
+			L.print();
+			std::cout << "U: " << std::endl;
+			U.print();
+			std::cout << "P: " << std::endl;
+			P.print();
+			auto PA = P * A;
+			auto LU = L * U;
+			std::cout << "PA: " << std::endl;
+			PA.print();
+			std::cout << "LU: " << std::endl;
+			LU.print();
+			std::cout << "PA - LU" << std::endl;
+			auto PAmLU = PA - LU;
+			PAmLU.print();
+		}
+#endif
+
+#if 1
+		{
+			std::cout << "LU solve test: " << std::endl;
+			std::cout << "A: " << std::endl;
+			A.print();
+			auto mA = matrix_helpers::inverse(A);
+			std::cout << "A-1: " << std::endl;
+			mA.print();
+			auto I = matrix_helpers::identity<value_type>(A.rows());
+			auto X = matrix_helpers::lu_solve(A, I);
+			std::cout << "X: " << std::endl;
+			X.print();	
+			auto In = A * X;
+			std::cout << "I: " << std::endl;
+			In.print();
+		}
+#endif
+		{
+			std::cout << "----------------------" << std::endl;
+			std::cout << "MTX | Subdiagonal iterator test: " << std::endl;
+			std::cout << 1 << " : ";
+			std::ranges::for_each(A.subdiagonal_range(1), [](auto&& it){
+				std::cout << it << ' ';
+			});
+			std::cout << std::endl;
+			std::cout << -1 << " : ";
+			std::ranges::for_each(A.subdiagonal_range(-1), [](auto&& it) {
+				std::cout << it << ' ';
+			});
+			std::cout << std::endl;
+			std::cout << "----------------------" << std::endl;
+		}
+
+		{
+			std::cout << "----------------------" << std::endl;
+			std::cout << "MTX | Subdiagonal iterator test: " << std::endl;
+			auto subA = A.get_submatrix(A[2][1], A[4][3]);
+			std::cout << "subA: 3x3 : " << std::endl;
+			subA.print();
+			std::cout << 1 << " : ";
+			std::ranges::for_each(subA.subdiagonal_range(1), [](auto&& it) {
+				std::cout << it << ' ';
+			});
+			std::cout << std::endl;
+			std::cout << -1 << " : ";
+			std::ranges::for_each(subA.subdiagonal_range(-1), [](auto&& it) {
+				std::cout << it << ' ';
+			});
+			std::cout << std::endl;
+			std::cout << "----------------------" << std::endl;
+		}
+
 #if 1
 		{
 			// Parlett
-			using cvt = std::complex<value_type>;
+			// using cvt = std::complex<value_type>;
 			auto cA = utils::to_complex(A);
 			std::cout << "A : " << std::endl;
 			A.print();
@@ -451,11 +540,8 @@ int main() {
 			std::cout << "H : " << std::endl;
 			H.print();
 
-			using current_type = typename std::remove_cvref_t<decltype(H)>::value_type;
-			static_assert(!ComplexLike<current_type>);
-			static_assert(ComplexLike<float> != ComplexLike<std::complex<float>>);
-
 			auto [U, T] = matrix_helpers::schur(H);
+
 			auto Qt = matrix_helpers::transpose(Q);
 			Qt = Q * Qt;
 			std::cout << "Q * Qt: " << std::endl;
@@ -477,7 +563,7 @@ int main() {
 			auto a_like = QU * T * QU_tc;
 			a_like.print();
 
-			auto my_sin = []<typename vT>(const vT& z) -> vT { return std::sin(z); };
+			auto my_sin = []<typename vT>(const vT& z) -> vT { return std::log(z); };
 			auto F = matrix_helpers::parlett(T, my_sin);
 			
 			std::cout << "F: " << std::endl;
@@ -500,6 +586,21 @@ int main() {
 		}
 #endif
 
-	//helpers_tests();
+#if 1
+		{
+			static_assert(ComplexLike<float> != ComplexLike<std::complex<float>>);
+			const auto& a1 = A.get_allocator();
+			Matrix<value_type> B(std::move(A));
+			const auto& a2 = B.get_allocator();
+			std::cout << &a1 << " | " << &a2 << " | a1 == a2 ? " << (a1 == a2) << std::endl;
+			std::cout << a1.resource() << " | " << a2.resource() << std::endl;
+		}
+#endif
+
+		{
+			
+					
+		}
+
 	return 0;
 }
