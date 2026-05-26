@@ -185,7 +185,7 @@ export namespace matrix {
 			constexpr const_reference operator[](difference_type c) const { return *(row_data + c); }
 
 			constexpr auto operator<=>(const const_RowProxy& other) const { return row_data <=> other.row_data; }
-			constexpr auto operator==(const const_RowProxy& other) const { return row_data == other.row_data; }
+			constexpr bool operator==(const const_RowProxy& other) const { return row_data == other.row_data; }
 
 		public:
 			constexpr const_iterator begin() const noexcept { return const_iterator(row_data); }
@@ -240,7 +240,7 @@ export namespace matrix {
 			constexpr reference operator[](difference_type c) { return row_data[c];	}
 			constexpr const_reference operator[](difference_type c) const { return row_data[c]; }
 
-			constexpr auto operator==(const RowProxy& other) const { return row_data == other.row_data; }
+			constexpr bool operator==(const RowProxy& other) const { return row_data == other.row_data; }
 			constexpr auto operator<=>(const RowProxy& other) const { return row_data <=> other.row_data; }
 		
 		public:
@@ -817,7 +817,7 @@ export namespace matrix {
 	};
 
 	template<typename T>
-	inline constexpr matrix_const_col_iterator<T> operator+(
+	constexpr matrix_const_col_iterator<T> operator+(
 			std::ptrdiff_t n, const matrix_const_col_iterator<T>& o) {
 		return matrix_const_col_iterator(o.ptr + n, o.rows(), o.stride);
 	}
@@ -886,7 +886,7 @@ export namespace matrix {
 	};
 
 	template <typename T>
-	inline constexpr matrix_col_iterator<T> operator+(std::ptrdiff_t n, const matrix_col_iterator<T>& o) {
+	constexpr matrix_col_iterator<T> operator+(std::ptrdiff_t n, const matrix_col_iterator<T>& o) {
 		return matrix_col_iterator(o.ptr + n, o.rows, o.stride);
 	}
 

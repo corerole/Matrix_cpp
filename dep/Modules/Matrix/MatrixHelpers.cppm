@@ -32,7 +32,7 @@ namespace test_utils {
 	static auto mt = std::mt19937(std::random_device{}());
 
 	template<typename T>
-	inline auto gen(T min, T max) {
+	 auto gen(T min, T max) {
 		auto dist = distribution<T>(min, max);
 		return std::invoke(dist, mt);
 	};
@@ -43,7 +43,7 @@ namespace test_utils {
 	}
 
 	template<auto V> struct End {
-		inline constexpr bool operator==(auto&& x) const { return *x == V; }
+		 constexpr bool operator==(auto&& x) const { return *x == V; }
 	};
 
 	template<typename Func, typename Value> concept _projector = std::is_same_v<std::invoke_result_t<Func, Value>, std::add_rvalue_reference_t<Value>>;
@@ -95,7 +95,7 @@ export namespace utils {
 	template<typename Range> concept arithmetic_input_range = std::ranges::input_range<Range> && arithmetic<typename std::ranges::iterator_t<Range>::value_type>;
 	template<typename Range> concept complex_input_range = std::ranges::input_range<Range> && complex<typename std::ranges::iterator_t<Range>::value_type>;
 
-	inline auto to_complex(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+	 auto to_complex(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
 		using matrix = typename std::remove_cvref_t<decltype(A)>;
 		using value_type = typename matrix::value_type;
 		using allocator_type = typename std::remove_cvref_t<decltype(allocator)>;
@@ -107,7 +107,7 @@ export namespace utils {
 		return cm;
 	}
 
-	inline auto to_complex(const MatrixLike auto& A) {
+	 auto to_complex(const MatrixLike auto& A) {
 		return to_complex(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -147,7 +147,7 @@ export namespace matrix_helpers {
 		}
 	}
 
-	inline auto transpose(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+	 auto transpose(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
 		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		const auto r = A.rows();
@@ -157,7 +157,7 @@ export namespace matrix_helpers {
 		return result;
 	}
 
-	inline auto transpose(const MatrixLike auto& A) {
+	 auto transpose(const MatrixLike auto& A) {
 		return transpose(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -176,7 +176,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto identity(std::size_t n, const AllocatorLike auto& allocator) {
+	 auto identity(std::size_t n, const AllocatorLike auto& allocator) {
 		using Alloc = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		Matrix<value_type, Alloc> result(n, n, allocator);
 		identity_(result);
@@ -184,11 +184,11 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto identity(std::size_t n) {
+	 auto identity(std::size_t n) {
 		return identity<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto Kronecker_product(const MatrixLike auto& A, const MatrixLike auto& B) {
+	 auto Kronecker_product(const MatrixLike auto& A, const MatrixLike auto& B) {
 		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
 		auto n = A.rows();
 		auto m = A.cols();
@@ -241,7 +241,7 @@ export namespace matrix_helpers {
 		A = A * scale;
 	}
 
-	inline auto scale_matrix(const MatrixLike auto& A, const auto& allocator) {
+	 auto scale_matrix(const MatrixLike auto& A, const auto& allocator) {
 		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
 		using alloc = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		Matrix<value_type, alloc> B(A, allocator);
@@ -249,7 +249,7 @@ export namespace matrix_helpers {
 		return B;
 	}
 
-	inline auto scale_matrix(const MatrixLike auto& A) {
+	 auto scale_matrix(const MatrixLike auto& A) {
 		using alloc = std::remove_cvref_t<decltype(A)>::allocator_type;
 		return scale_matrix(A, alloc{});
 	}
@@ -354,7 +354,7 @@ export namespace matrix_helpers {
 		return X; //std::make_pair(tmp, X);
 	}
 	
-	inline auto matrix_euclid_col_norm(const MatrixLike auto& A, const auto& alloc) {
+	 auto matrix_euclid_col_norm(const MatrixLike auto& A, const auto& alloc) {
 		using mtx = std::remove_cvref_t<decltype(A)>;
 		using value_type = mtx::value_type;
 		using allocator = std::remove_cvref_t<decltype(alloc)>;
@@ -365,7 +365,7 @@ export namespace matrix_helpers {
 		return x;
 	}
 
-	inline auto matrix_euclid_col_norm(const MatrixLike auto& A) {
+	 auto matrix_euclid_col_norm(const MatrixLike auto& A) {
 		return matrix_euclid_col_norm(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
@@ -485,7 +485,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename Alloc_ = std::pmr::polymorphic_allocator<std::byte>>
-	inline auto range_norm_by_fst_elem(
+	 auto range_norm_by_fst_elem(
 		std::ranges::input_range auto&& c,
 		const Alloc_& allocator = {}
 	) {
@@ -507,7 +507,7 @@ export namespace matrix_helpers {
 		});
 	}
 
-	inline auto row_substruction(
+	 auto row_substruction(
 		std::ranges::input_range auto&& fst,
 		std::ranges::input_range auto&& snd,
 		const auto& alloc
@@ -520,7 +520,7 @@ export namespace matrix_helpers {
 		return res;
 	}
 
-	inline auto row_substruction(
+	 auto row_substruction(
 		std::ranges::input_range auto&& fst,
 		std::ranges::input_range auto&& snd
 	) {
@@ -681,7 +681,7 @@ export namespace matrix_helpers {
 		}
 	}
 
-	inline auto col_centered(const MatrixLike auto& A, const auto& allocator) {
+	 auto col_centered(const MatrixLike auto& A, const auto& allocator) {
 		using value_type = std::remove_cvref_t<decltype(A)>::value_type;
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		Matrix<value_type, allocator_type> result(A, allocator);
@@ -689,11 +689,11 @@ export namespace matrix_helpers {
 		return result;
 	}
 
-	inline auto col_centered(const MatrixLike auto& A) {
+	 auto col_centered(const MatrixLike auto& A) {
 		return col_centered(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto covariance(const MatrixLike auto& A) {
+	 auto covariance(const MatrixLike auto& A) {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1355,7 +1355,7 @@ export namespace matrix_helpers {
 
 	// SVD-based inverse — replaces previous Gaussian-elim implementation
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto inverse(const Matrix<T>& A) -> Matrix<T, Alloc> {
+	 auto inverse(const Matrix<T>& A) -> Matrix<T, Alloc> {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -1477,7 +1477,7 @@ export namespace matrix_helpers {
 		std::copy(x.begin() + 1, x.end(), dst.begin() + 1);
 	}
 
-	inline auto householder_vector(
+	 auto householder_vector(
 		std::ranges::forward_range auto&& x,
 		const auto& alloc
 	) {
@@ -1492,7 +1492,7 @@ export namespace matrix_helpers {
 		return householder_vector(x, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto householder_reflection_matrix(std::ranges::forward_range auto&& x, const auto& alloc) {
+	 auto householder_reflection_matrix(std::ranges::forward_range auto&& x, const auto& alloc) {
 		using size_type = std::size_t;
 		using value_type = std::ranges::range_value_t<std::remove_cvref_t<decltype(x)>>;
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(alloc)>, value_type>;
@@ -1656,7 +1656,7 @@ export namespace matrix_helpers {
 		return transpose(upper_companion_matrix(r), std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	constexpr inline auto tr_det_2x2_(
+	constexpr  auto tr_det_2x2_(
 		const ScalarLike auto& a11,
 		const ScalarLike auto& a12,
 		const ScalarLike auto& a21,
@@ -1667,7 +1667,7 @@ export namespace matrix_helpers {
 		return std::make_pair(tr, det);
 	}
 
-	constexpr inline auto self_values_2x2_(
+	constexpr  auto self_values_2x2_(
 		const ComplexLike auto& a11,
 		const ComplexLike auto& a12,
 		const ComplexLike auto& a21,
@@ -1776,7 +1776,7 @@ export namespace matrix_helpers {
 #endif
 
 	template<typename value_type>
-	inline auto first_standard_basis_vector(std::size_t n, const AllocatorLike auto& allocator) {
+	 auto first_standard_basis_vector(std::size_t n, const AllocatorLike auto& allocator) {
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
 		constexpr auto one = static_cast<value_type>(1);
 		Matrix<value_type, allocator_type> e1(n, 1, allocator);
@@ -1785,11 +1785,11 @@ export namespace matrix_helpers {
 	}
 
 	template<typename value_type>
-	inline auto basis_vector(std::size_t n) {
+	 auto basis_vector(std::size_t n) {
 		return first_standard_basis_vector<value_type>(n, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto francis_vector(const MatrixLike auto& A) {
+	 auto francis_vector(const MatrixLike auto& A) {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using value_type = matrix::value_type;
 		using allocator_type = matrix::allocator_type;
@@ -1917,7 +1917,7 @@ export namespace matrix_helpers {
 	}
 #endif
 
-	inline constexpr auto householder_vector_francis_qr_2x2(
+	 constexpr auto householder_vector_francis_qr_2x2(
 		const ScalarLike auto& x0,
 		const ScalarLike auto& x1
 	) {
@@ -3127,7 +3127,7 @@ export namespace matrix_helpers {
 		// return R;
 	}
 
-	inline auto expm(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
+	 auto expm(const MatrixLike auto& A, const AllocatorLike auto& allocator) {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using value_type = matrix::value_type;
 		using allocator_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, value_type>;
@@ -3136,13 +3136,13 @@ export namespace matrix_helpers {
 		return R;
 	}
 
-	inline auto expm(const MatrixLike auto& A) {
+	 auto expm(const MatrixLike auto& A) {
 		return expm(A, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
 #if 0
 	template<std::floating_point U, typename Alloc = std::allocator<U>>
-	inline auto sqrtm_Denman_Beavers(const Matrix<U>& A) -> Matrix<U, Alloc> {
+	 auto sqrtm_Denman_Beavers(const Matrix<U>& A) -> Matrix<U, Alloc> {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -3183,7 +3183,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto inverse_old(const Matrix<T>& A) -> Matrix<T, Alloc> {
+	 auto inverse_old(const Matrix<T>& A) -> Matrix<T, Alloc> {
 		using matrix = std::remove_cvref_t<decltype(A)>;
 		using size_type = matrix::size_type;
 		using value_type = matrix::value_type;
@@ -3249,7 +3249,7 @@ export namespace matrix_helpers {
 	}
 
 	template<typename T, typename Alloc = std::allocator<T>>
-	inline auto matrixDiv(const Matrix<T>& A, const Matrix<T>& B) -> Matrix<T, Alloc> {
+	 auto matrixDiv(const Matrix<T>& A, const Matrix<T>& B) -> Matrix<T, Alloc> {
 		auto&& [Q, R] = householder_qr_decomposition(B);
 		// X = A * R⁻¹ * Qᵀ
 		auto X = A * inverse<T, Alloc>(R) * Q.transpose();

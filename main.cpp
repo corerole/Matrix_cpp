@@ -563,7 +563,7 @@ int main() {
 			auto a_like = QU * T * QU_tc;
 			a_like.print();
 
-			auto my_sin = []<typename vT>(const vT& z) -> vT { return std::log(z); };
+			auto my_sin = []<typename vT>(const vT& z) -> vT { return std::sin(z); };
 			auto F = matrix_helpers::parlett(T, my_sin);
 			
 			std::cout << "F: " << std::endl;

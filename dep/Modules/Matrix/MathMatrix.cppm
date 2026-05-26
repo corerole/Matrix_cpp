@@ -19,40 +19,40 @@ export namespace math_matrix {
 
 	template<typename T> struct is_Complex : std::false_type {};
 	template<typename T> struct is_Complex<std::complex<T>> : std::true_type {};
-	template<typename T> constexpr inline bool is_Complex_v = is_Complex<T>::value;
+	template<typename T> constexpr  bool is_Complex_v = is_Complex<T>::value;
 	template<typename T> concept ComplexLike = is_Complex_v<T>;
 
 	template<typename T> struct is_matrix : std::false_type {};
 	template<typename T, typename Alloc> struct is_matrix<Matrix<T, Alloc>> : std::true_type {};
-	template<typename T> inline constexpr bool is_matrix_v = is_matrix<T>::value;
+	template<typename T>  constexpr bool is_matrix_v = is_matrix<T>::value;
 	
 	template<typename T> struct is_vector : std::false_type {};
 	template<typename T, typename Alloc> struct is_vector<std::vector<T, Alloc>> : std::true_type {};
 	template<typename T, std::size_t SZ> struct is_vector<std::array<T, SZ>> : std::true_type {};
-	template<typename T> inline constexpr bool is_vector_v = is_vector<T>::value;
+	template<typename T>  constexpr bool is_vector_v = is_vector<T>::value;
 
 	template<typename T> concept arithmetic = std::is_arithmetic_v<T>;
 
 	template<typename T> struct is_allocator : std::true_type {};
-	template<typename T> inline constexpr bool is_allocator_v = is_allocator<T>::value;
+	template<typename T>  constexpr bool is_allocator_v = is_allocator<T>::value;
 	template<typename T> concept AllocatorLike = is_allocator_v<T>;
 
 	template<typename T> struct is_Submatrix : std::false_type {};
 	template<typename T> struct is_Submatrix<Submatrix<T>> : std::true_type {};
 	template<typename T> struct is_Submatrix<const_Submatrix<T>> : std::true_type {};
-	template<typename T> inline constexpr bool is_Submatrix_v = is_Submatrix<T>::value;
+	template<typename T>  constexpr bool is_Submatrix_v = is_Submatrix<T>::value;
 	template<typename T> concept SubmatrixLike = is_Submatrix_v<T>;
 
 	template<typename T> struct is_Row : std::false_type {};
 	template<typename T> struct is_Row<RowProxy<T>> : std::true_type {};
 	template<typename T> struct is_Row<const_RowProxy<T>> : std::true_type {};
-	template<typename T> inline constexpr bool is_Row_v = is_Row<T>::value;
+	template<typename T>  constexpr bool is_Row_v = is_Row<T>::value;
 	template<typename T> concept RowLike = is_Row_v<T>;
 
 	template<typename T> struct is_Col : std::false_type {};
 	template<typename T> struct is_Col<ColProxy<T>> : std::true_type {};
 	template<typename T> struct is_Col<const_ColProxy<T>> : std::true_type {};
-	template<typename T> inline constexpr bool is_Col_v = is_Col<T>::value;
+	template<typename T>  constexpr bool is_Col_v = is_Col<T>::value;
 	template<typename T> concept ColLike = is_Col_v<T>;
 
 	template<typename T> concept MatrixLike = is_matrix_v<T> || is_Submatrix_v<T>;
@@ -167,7 +167,7 @@ export namespace math_matrix {
 	}
 #endif
 
-	inline auto operator*(const MatrixLike auto& lhs, const ScalarLike auto& rhs) {
+	 auto operator*(const MatrixLike auto& lhs, const ScalarLike auto& rhs) {
 		using mtx_value_type = std::remove_cvref_t<decltype(lhs)>::value_type;
 		Matrix<mtx_value_type> new_mtx(lhs); //lhs.rows(), lhs.cols());
 		// const auto val = static_cast<mtx_value_type>(rhs);
@@ -175,7 +175,7 @@ export namespace math_matrix {
 		return new_mtx;
 	}
 
-	inline auto operator*(const ScalarLike auto& lhs, const MatrixLike auto& rhs) {
+	 auto operator*(const ScalarLike auto& lhs, const MatrixLike auto& rhs) {
 		return rhs * lhs;
 	}
 
@@ -238,7 +238,7 @@ export namespace math_matrix {
 		std::ranges::for_each(r, [val](auto& it) { it *= val; });
 	}
 
-	inline auto vec_x_scalar(
+	 auto vec_x_scalar(
 		const VectorLike auto& vec,
 		const ScalarLike auto& scalar,
 		const AllocatorLike auto& allocator
@@ -252,18 +252,18 @@ export namespace math_matrix {
 		return result;
 	}
 
-	inline auto vec_x_scalar(
+	 auto vec_x_scalar(
 		const VectorLike auto& vec,
 		const ScalarLike auto& scalar
 	) {
 		return vec_x_scalar(vec, scalar, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto operator*(const VectorLike auto& vec, const ScalarLike auto& scalar) {
+	 auto operator*(const VectorLike auto& vec, const ScalarLike auto& scalar) {
 		return vec_x_scalar(vec, scalar);
 	}
 
-	inline auto row_x_mtx(std::ranges::random_access_range auto&& row, const MatrixLike auto& mtx, const AllocatorLike auto& allocator) {
+	 auto row_x_mtx(std::ranges::random_access_range auto&& row, const MatrixLike auto& mtx, const AllocatorLike auto& allocator) {
 		using row_value_type = std::ranges::range_value_t<decltype(row)>;
 		using mtx_value_type = std::remove_cvref_t<decltype(mtx)>::value_type;
 		using res_value_type = std::common_type_t<row_value_type, mtx_value_type>;
@@ -294,11 +294,11 @@ export namespace math_matrix {
 		return result_;
 	}
 
-	inline auto row_x_mtx(std::ranges::random_access_range auto&& row, const MatrixLike auto& mtx) {
+	 auto row_x_mtx(std::ranges::random_access_range auto&& row, const MatrixLike auto& mtx) {
 		return row_x_mtx(row, mtx, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 
-	inline auto operator*(const RowLike auto& row, const MatrixLike auto& mtx) {
+	 auto operator*(const RowLike auto& row, const MatrixLike auto& mtx) {
 		return row_x_mtx(row, mtx);
 	}
 
@@ -312,7 +312,7 @@ export namespace math_matrix {
 		}
 	}
 	
-	inline auto vec_x_vec(
+	 auto vec_x_vec(
 		std::ranges::forward_range auto&& v1,
 		std::ranges::forward_range auto&& v2,
 		const AllocatorLike auto& allocator
@@ -326,7 +326,7 @@ export namespace math_matrix {
 		return result;
 	}
 
-	inline auto vec_x_vec(
+	 auto vec_x_vec(
 		std::ranges::forward_range auto&& v1,
 		std::ranges::forward_range auto&& v2
 	) {
@@ -334,7 +334,7 @@ export namespace math_matrix {
 	}
 
 #if 1
-	inline auto operator*(
+	 auto operator*(
 		const VectorLike auto& v1,
 		const VectorLike auto& v2
 	) {
@@ -342,7 +342,7 @@ export namespace math_matrix {
 	}
 #endif
 
-	inline auto mtx_x_col(
+	 auto mtx_x_col(
 		const MatrixLike auto& mtx,
 		std::ranges::random_access_range auto&& col,
 		const AllocatorLike auto& allocator
@@ -368,7 +368,7 @@ export namespace math_matrix {
 		return res;
 	}
 
-	inline auto mtx_x_col(
+	 auto mtx_x_col(
 		const MatrixLike auto& mtx,
 		std::ranges::random_access_range auto&& col
 	) {
@@ -380,7 +380,7 @@ export namespace math_matrix {
 	}
 
 #if 0
-	inline auto vec_x_mat(
+	 auto vec_x_mat(
 		std::ranges::random_access_range auto&& lhs,
 		const MatrixLike auto& rhs,
 		const AllocatorLike auto& allocator
@@ -409,7 +409,7 @@ export namespace math_matrix {
 	}
 
 
-	inline auto vec_x_mat(std::ranges::random_access_range auto&& lhs, const MatrixLike auto& rhs) {
+	 auto vec_x_mat(std::ranges::random_access_range auto&& lhs, const MatrixLike auto& rhs) {
 		return vec_x_mat(lhs, rhs, std::pmr::polymorphic_allocator<std::byte>{});
 	}
 #endif
@@ -473,7 +473,7 @@ export namespace math_matrix {
 	}
 
 	template<typename result_type>
-	inline auto mult(const MatrixLike auto& A, const MatrixLike auto& B, const auto& allocator) {
+	 auto mult(const MatrixLike auto& A, const MatrixLike auto& B, const auto& allocator) {
 		using A_value_type = typename std::remove_cvref_t<decltype(A)>::value_type;
 		using B_value_type = typename std::remove_cvref_t<decltype(B)>::value_type;
 		using C_alloc_type = rebind_allocator<std::remove_cvref_t<decltype(allocator)>, result_type>;
@@ -488,7 +488,7 @@ export namespace math_matrix {
 
 #if 1
 	template<typename result_type>
-	inline auto mult(const MatrixLike auto& A, const MatrixLike auto& B) {
+	 auto mult(const MatrixLike auto& A, const MatrixLike auto& B) {
 		using A_value_type = typename std::remove_cvref_t<decltype(A)>::value_type;
 		using A_alloc_type = typename std::remove_cvref_t<decltype(A)>::allocator_type;
 		using B_value_type = typename std::remove_cvref_t<decltype(B)>::value_type;
