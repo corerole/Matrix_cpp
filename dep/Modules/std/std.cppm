@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+// #pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
+// #pragma clang diagnostic ignored "-Wreserved-module-identifier"
+
 // In a module-file, the optional `module;` must appear first; see [cpp.pre].
 module;
 
@@ -157,3 +160,4 @@ export module std;
 #include <cwctype>
 
 #pragma warning(pop)
+

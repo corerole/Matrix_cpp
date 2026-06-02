@@ -6,3 +6,4 @@ FILES
 	"${STD_MODULE_DIR}/std.cppm"
 	"${STD_MODULE_DIR}/std.compat.cppm"
 )
+set(CMAKE_CXX_STDLIB_MODULES_JSON "${CMAKE_CURRENT_LIST_DIR}/my.modules.json")

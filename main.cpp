@@ -28,8 +28,8 @@ void operator_test(const MatrixLike auto& mtx) {
 	A + B;
 	// A *= B;
 	A * B;
-  // A /= B;
-  // A / B;
+	// A /= B;
+	// A / B;
 
 //	B -= 2;
 //	B - 2;
@@ -43,7 +43,7 @@ void operator_test(const MatrixLike auto& mtx) {
 
 int main() {
 	
-		using value_type = float;
+		using value_type = float; // long double;
 		constexpr size_t cols = 12, rows = 12;
 		constexpr size_t SZ = cols * rows * sizeof(value_type) + alignof(value_type);
 		std::array<std::byte, SZ> buf;
@@ -395,7 +395,7 @@ int main() {
 			// complex_mtx.print();
 			A.print();
 			auto [Q, H] = matrix_helpers::hessenberg_form(A);
-			auto [U, T] = matrix_helpers::schur(H);
+			auto [U, T] = matrix_helpers::schur<false>(H);
 			auto UQ = Q * U;
 			std::cout << "Q :" << std::endl;
 			UQ.print();
@@ -540,13 +540,11 @@ int main() {
 			std::cout << "H : " << std::endl;
 			H.print();
 
-			auto [U, T] = matrix_helpers::schur(H);
-
+			auto [U, T] = matrix_helpers::schur<false>(H);
 			auto Qt = matrix_helpers::transpose(Q);
 			Qt = Q * Qt;
 			std::cout << "Q * Qt: " << std::endl;
 			Qt.print();
-
 
 			std::cout << "T: " << std::endl;
 			T.print();
@@ -585,6 +583,46 @@ int main() {
 			Zero.print();
 		}
 #endif
+		{
+			auto cA = utils::to_complex(A);
+			auto [Q, H] = matrix_helpers::hessenberg_form(cA);
+			auto [U, T, Block_map] = matrix_helpers::schur<true>(H);
+			auto vS = matrix_helpers::reversed_blocks_to_vector_submatrices(T, Block_map);
+			auto logfunc = [](auto&& val) { return std::log(std::forward<decltype(val)>(val)); };
+			auto F = matrix_helpers::parlett(T, vS, logfunc);
+			F.print();
+		}
+
+		{
+			auto [Q, H] = matrix_helpers::hessenberg_form(A);
+			auto [U, T, Block_map] = matrix_helpers::schur<true>(H);
+			auto vS = matrix_helpers::reversed_blocks_to_vector_submatrices(T, Block_map);
+			auto logfunc = [](auto&& val) { return std::log(std::forward<decltype(val)>(val)); };
+			// auto F = matrix_helpers::parlett_with_check(T, vS, logfunc);
+			//F.print();
+			bool has = matrix_helpers::has_real_solution(vS, logfunc);
+			if (has) {
+				auto F = matrix_helpers::parlett(T, vS, logfunc);
+			}	else {
+				auto cT = utils::to_complex(T);
+				auto cvS = matrix_helpers::reversed_blocks_to_vector_submatrices(cT, Block_map);
+				auto F = matrix_helpers::parlett(cT, cvS, logfunc);
+			}
+		}
+
+#if 0
+		{
+			auto logfunc = [](auto&& val) { return std::log(std::forward<decltype(val)>(val)); };
+			std::cout << "log(A):" << std::endl;
+			auto l = matrix_helpers::Foo(A, logfunc);
+			l.print();
+			auto expfunc = [](auto&& val) { return std::exp(std::forward<decltype(val)>(val)); };
+			std::cout << "exp(3.14 * log(A)):" << std::endl;
+			l = l * 3.14f;
+			auto res = matrix_helpers::Foo(l, expfunc);
+			res.print();
+		}
+#endif
 
 #if 1
 		{
@@ -596,11 +634,6 @@ int main() {
 			std::cout << a1.resource() << " | " << a2.resource() << std::endl;
 		}
 #endif
-
-		{
-			
-					
-		}
 
 	return 0;
 }

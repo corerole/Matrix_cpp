@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+// NOLINTBEGIN
+// #pragma clang diagnostic ignored "-Winclude-angled-in-module-purview"
+// #pragma clang diagnostic ignored "-Wreserved-module-identifier"
+
 export module std.compat;
 
 export import std;
@@ -531,3 +535,4 @@ export using std::towlower;
 export using std::towupper;
 export using std::towctrans;
 export using std::wctrans;
+// NOLINTEND

@@ -1244,6 +1244,7 @@ export namespace matrix {
 				constexpr auto one = static_cast<size_type>(1);
 				return to_x - from_x + one; 
 			}
+
 			constexpr size_type size() const noexcept { return rows() * cols(); }
 			constexpr pointer data()  const noexcept { return first; }
 			constexpr bool is_square() const noexcept { return rows() == cols(); }
@@ -1631,6 +1632,8 @@ export namespace matrix {
 			using base_t::is_square;
 
 		public:
+
+			constexpr pointer data() { return first; }
 		
 			template<typename value_type_, typename allocator_type_ = std::allocator<value_type>>
 			auto get_matrix(const allocator_type_& allocator = {}) {
@@ -2438,7 +2441,7 @@ export namespace matrix {
 				return diagonal_iterator(_data + x, _rows + 1u);
 #else
 				const difference_type n = _rows;
-				assert(x >= -(n - 1) && x <= n - 1);
+				// assert(x >= -(n - 1) && x <= n - 1);
 				const difference_type start_offset = (x >= 0) ? x : -x * n;
 				return diagonal_iterator(_data + start_offset, n + 1);
 #endif
@@ -2467,7 +2470,7 @@ export namespace matrix {
 #else
 				assert(is_square());
 				const difference_type n = _rows;
-				assert(x >= -(n - 1) && x <= n - 1);
+				// assert(x >= -(n - 1) && x <= n - 1);
 				const difference_type count = n - (x >= 0 ? x : -x);
 				const difference_type start_offset = (x >= 0) ? x : -x * n;
 				return diagonal_iterator(_data + start_offset + count * (n + 1), n + 1);
@@ -2486,7 +2489,7 @@ export namespace matrix {
 #else
 				assert(is_square());
 				const difference_type n = _rows;
-				assert(x >= -(n - 1) && x <= n - 1);
+				// assert(x >= -(n - 1) && x <= n - 1);
 				const difference_type count = n - (x >= 0 ? x : -x);
 				const difference_type start_offset = (x >= 0) ? x : -x * n;
 				return diagonal_const_iterator(_data + start_offset + count * (n + 1), n + 1);
